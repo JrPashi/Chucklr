@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>CHUCKLR - Post the Chaos</title>
+  
+  <!-- PWA Meta Tags -->
+  <meta name="theme-color" content="#09090b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="description" content="Chucklr - The modern monochrome meme-sharing platform.">
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              black: '#000000',
+              white: '#ffffff',
+              dark: '#09090b',
+              cardDark: '#121215',
+              borderDark: '#27272a',
+              light: '#f4f4f5',
+              cardLight: '#ffffff',
+              borderLight: '#e4e4e7',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- React & ReactDOM -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  
+  <!-- Babel for JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    body {
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      touch-action: manipulation;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 4px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #3f3f46;
+      border-radius: 4px;
+    }
+    @keyframes heartPulse {
+      0% { transform: scale(0); opacity: 0; }
+      50% { transform: scale(1.3); opacity: 1; }
+      100% { transform: scale(1); opacity: 0; }
+    }
+    .animate-heart {
+      animation: heartPulse 0.7s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+    }
+  </style>
+</head>
+<body class="bg-zinc-950 text-zinc-100 min-h-screen font-sans antialiased selection:bg-white selection:text-black">
+
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    // --- LOGO WITH INTEGRATED SMILE SWOOSH ---
+    function ChucklrLogo({ className = "h-8" }) {
+      return (
+        <div class={`flex items-center select-none ${className}`}>
+          <svg viewBox="0 0 170 36" class="h-full w-auto fill-current text-zinc-100 dark:text-white">
+            <text x="0" y="24" fontFamily="Inter, sans-serif" fontWeight="900" fontSize="23" letterSpacing="-0.03em">
+              CHUCKLR
+            </text>
+            <path d="M 12 30 Q 85 39 158 30" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+          </svg>
+        </div>
+      );
+    }
+
+    // --- INITIAL BLANK DATA PERSISTED IN LOCAL STORAGE ---
+    const DEFAULT_USER = {
+      id: 'user_me',
+      username: 'creator',
+      displayName: 'Meme Creator',
+      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
+      bio: 'Creating chaos on Chucklr 24/7.',
+      followers: 0,
+      following: 0,
+      postsCount: 0,
+      isFollowing: false
+    };
+
+    function App() {
+      const [currentTab, setCurrentTab] = useState('home');
+      
+      // Load saved posts or start with empty array
+      const [posts, setPosts] = useState(() => {
+        const saved = localStorage.getItem('chucklr_posts');
+        return saved ? JSON.parse(saved) : [];
+      });
+
+      const [users, setUsers] = useState(() => {
+        const saved = localStorage.getItem('chucklr_users');
+        return saved ? JSON.parse(saved) : { 'user_me': DEFAULT_USER };
+      });
+
+      const [notifications, setNotifications] = useState([]);
+      const [activePostForComments, setActivePostForComments] = useState(null);
+      const [searchQuery, setSearchQuery] = useState('');
+      const [showToast, setShowToast] = useState(false);
+      const [toastMsg, setToastMsg] = useState('');
+      const [darkMode, setDarkMode] = useState(true);
+
+      // Save to localStorage whenever posts/users update
+      useEffect(() => {
+        localStorage.setItem('chucklr_posts', JSON.stringify(posts));
+      }, [posts]);
+
+      useEffect(() => {
+        localStorage.setItem('chucklr_users', JSON.stringify(users));
+      }, [users]);
+
+      useEffect(() => {
+        if (window.lucide) {
+          window.lucide.createIcons();
+        }
+      });
+
+      const triggerToast = (msg) => {
+        setToastMsg(msg);
+        setShowToast(true);
+        setTimeout(() => setShowToast(false), 2500);
+      };
+
+      const handleLike = (postId) => {
+        setPosts(prev => prev.map(post => {
+          if (post.id === postId) {
+            const isLiked = !post.isLiked;
+            return {
+              ...post,
+              isLiked,
+              likes: isLiked ? post.likes + 1 : post.likes - 1
+            };
+          }
+          return post;
+        }));
+      };
+
+      const handleAddComment = (postId, commentText) => {
+        if (!commentText.trim()) return;
+        setPosts(prev => prev.map(post => {
+          if (post.id === postId) {
+            const newComment = {
+              id: 'c_' + Date.now(),
+              username: users['user_me'].username,
+              text: commentText,
+              time: 'Just now'
+            };
+            return {
+              ...post,
+              commentsCount: post.commentsCount + 1,
+              comments: [...post.comments, newComment]
+            };
+          }
+          return post;
+        }));
+        triggerToast('Comment posted');
+      };
+
+      const handleCreatePost = (newPostData) => {
+        const newPost = {
+          id: 'post_' + Date.now(),
+          userId: 'user_me',
+          imageUrl: newPostData.imageUrl,
+          caption: newPostData.caption,
+          tags: newPostData.tags,
+          likes: 0,
+          isLiked: false,
+          commentsCount: 0,
+          createdAt: 'Just now',
+          comments: []
+        };
+        
+        setPosts([newPost, ...posts]);
+        
+        // Update user post count
+        setUsers(prev => ({
+          ...prev,
+          user_me: {
+            ...prev.user_me,
+            postsCount: (prev.user_me.postsCount || 0) + 1
+          }
+        }));
+
+        setCurrentTab('home');
+        triggerToast('Meme posted to feed!');
+      };
+
+      return (
+        <div class={`min-h-screen flex flex-col justify-between max-w-md mx-auto ${darkMode ? 'bg-zinc-950 text-zinc-100' : 'bg-zinc-100 text-zinc-900'} relative pb-16 shadow-2xl transition-colors`}>
+          
+          {/* HEADER */}
+          <header class={`sticky top-0 z-30 flex items-center justify-between px-4 py-3.5 backdrop-blur-md border-b ${darkMode ? 'bg-zinc-950/90 border-zinc-800' : 'bg-white/90 border-zinc-200'}`}>
+            <div class="cursor-pointer" onClick={() => setCurrentTab('home')}>
+              <ChucklrLogo className="h-7" />
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button 
+                onClick={() => setCurrentTab('notifications')}
+                class={`relative p-2 rounded-full transition-colors ${darkMode ? 'hover:bg-zinc-800 text-white' : 'hover:bg-zinc-200 text-black'}`}
+              >
+                <i data-lucide="bell" class="w-5 h-5"></i>
+              </button>
+              <button 
+                onClick={() => setCurrentTab('settings')}
+                class={`p-2 rounded-full transition-colors ${darkMode ? 'hover:bg-zinc-800 text-white' : 'hover:bg-zinc-200 text-black'}`}
+              >
+                <i data-lucide="settings" class="w-5 h-5"></i>
+              </button>
+            </div>
+          </header>
+
+          {/* MAIN CONTENT AREA */}
+          <main class="flex-1 overflow-y-auto custom-scrollbar">
+            {currentTab === 'home' && (
+              <HomeFeed 
+                posts={posts} 
+                users={users} 
+                darkMode={darkMode}
+                onLike={handleLike} 
+                onOpenComments={(p) => setActivePostForComments(p)}
+                onShare={() => triggerToast('Link copied to clipboard')}
+                onCreateClick={() => setCurrentTab('create')}
+              />
+            )}
+
+            {currentTab === 'search' && (
+              <SearchTab 
+                searchQuery={searchQuery}
+                setSearchQuery={setSearchQuery}
+                users={users}
+                darkMode={darkMode}
+              />
+            )}
+
+            {currentTab === 'create' && (
+              <CreateMemeTab darkMode={darkMode} onSubmit={handleCreatePost} onCancel={() => setCurrentTab('home')} />
+            )}
+
+            {currentTab === 'leaderboard' && (
+              <LeaderboardTab users={users} posts={posts} darkMode={darkMode} />
+            )}
+
+            {currentTab === 'profile' && (
+              <ProfileTab 
+                currentUser={users['user_me']} 
+                userPosts={posts.filter(p => p.userId === 'user_me')} 
+                darkMode={darkMode}
+                onEditProfile={() => setCurrentTab('settings')}
+              />
+            )}
+
+            {currentTab === 'notifications' && (
+              <NotificationsTab notifications={notifications} users={users} darkMode={darkMode} />
+            )}
+
+            {currentTab === 'settings' && (
+              <SettingsTab darkMode={darkMode} setDarkMode={setDarkMode} />
+            )}
+          </main>
+
+          {/* COMMENTS MODAL */}
+          {activePostForComments && (
+            <CommentsModal 
+              post={posts.find(p => p.id === activePostForComments.id) || activePostForComments} 
+              darkMode={darkMode}
+              onClose={() => setActivePostForComments(null)}
+              onAddComment={handleAddComment}
+            />
+          )}
+
+          {/* TOAST */}
+          {showToast && (
+            <div class={`fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full font-semibold shadow-2xl flex items-center gap-2 text-xs border ${darkMode ? 'bg-white text-black border-zinc-200' : 'bg-black text-white border-zinc-800'}`}>
+              <i data-lucide="check" class="w-4 h-4"></i> {toastMsg}
+            </div>
+          )}
+
+          {/* BOTTOM NAVIGATION BAR */}
+          <nav class={`fixed bottom-0 left-0 right-0 max-w-md mx-auto backdrop-blur-md border-t px-4 py-2 flex justify-around items-center z-40 ${darkMode ? 'bg-zinc-950/95 border-zinc-800' : 'bg-white/95 border-zinc-200'}`}>
+            <button 
+              onClick={() => setCurrentTab('home')} 
+              class={`flex flex-col items-center gap-1 ${currentTab === 'home' ? (darkMode ? 'text-white' : 'text-black') : (darkMode ? 'text-zinc-500' : 'text-zinc-400')}`}
+            >
+              <i data-lucide="flame" class="w-5 h-5"></i>
+              <span class="text-[10px] font-semibold">Feed</span>
+            </button>
+
+            <button 
+              onClick={() => setCurrentTab('search')} 
+              class={`flex flex-col items-center gap-1 ${currentTab === 'search' ? (darkMode ? 'text-white' : 'text-black') : (darkMode ? 'text-zinc-500' : 'text-zinc-400')}`}
+            >
+              <i data-lucide="search" class="w-5 h-5"></i>
+              <span class="text-[10px] font-semibold">Search</span>
+            </button>
+
+            {/* CREATE BUTTON */}
+            <button 
+              onClick={() => setCurrentTab('create')} 
+              class={`relative -top-3 p-3.5 rounded-full shadow-xl transition-transform active:scale-90 ${darkMode ? 'bg-white text-black' : 'bg-black text-white'}`}
+            >
+              <i data-lucide="plus" class="w-6 h-6 stroke-[2.5]"></i>
+            </button>
+
+            <button 
+              onClick={() => setCurrentTab('leaderboard')} 
+              class={`flex flex-col items-center gap-1 ${currentTab === 'leaderboard' ? (darkMode ? 'text-white' : 'text-black') : (darkMode ? 'text-zinc-500' : 'text-zinc-400')}`}
+            >
+              <i data-lucide="trophy" class="w-5 h-5"></i>
+              <span class="text-[10px] font-semibold">Legends</span>
+            </button>
+
+            <button 
+              onClick={() => setCurrentTab('profile')} 
+              class={`flex flex-col items-center gap-1 ${currentTab === 'profile' ? (darkMode ? 'text-white' : 'text-black') : (darkMode ? 'text-zinc-500' : 'text-zinc-400')}`}
+            >
+              <i data-lucide="user" class="w-5 h-5"></i>
+              <span class="text-[10px] font-semibold">Profile</span>
+            </button>
+          </nav>
+
+        </div>
+      );
+    }
+
+    // --- HOME FEED WITH EMPTY STATE ---
+    function HomeFeed({ posts, users, darkMode, onLike, onOpenComments, onShare, onCreateClick }) {
+      if (posts.length === 0) {
+        return (
+          <div class="flex flex-col items-center justify-center p-8 text-center min-h-[60vh] space-y-4">
+            <div class={`p-4 rounded-full border ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'}`}>
+              <i data-lucide="smile" class="w-10 h-10 stroke-[1.5]"></i>
+            </div>
+            <div>
+              <h3 class={`font-bold text-sm ${darkMode ? 'text-white' : 'text-black'}`}>Nothing funny here... yet.</h3>
+              <p class={`text-xs mt-1 ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>Be the first creator to post chaos on Chucklr!</p>
+            </div>
+            <button 
+              onClick={onCreateClick}
+              class={`px-5 py-2.5 rounded-xl font-bold text-xs shadow-lg transition-transform active:scale-95 ${darkMode ? 'bg-white text-black' : 'bg-black text-white'}`}
+            >
+              + Post First Meme
+            </button>
+          </div>
+        );
+      }
+
+      return (
+        <div class="space-y-4 p-3">
+          {posts.map(post => {
+            const author = users[post.userId] || { username: 'creator', avatar: 'https://via.placeholder.com/150' };
+            return (
+              <PostCard 
+                key={post.id} 
+                post={post} 
+                author={author} 
+                darkMode={darkMode}
+                onLike={() => onLike(post.id)}
+                onOpenComments={() => onOpenComments(post)}
+                onShare={onShare}
+              />
+            );
+          })}
+        </div>
+      );
+    }
+
+    // --- POST CARD ---
+    function PostCard({ post, author, darkMode, onLike, onOpenComments, onShare }) {
+      const [showHeartAnim, setShowHeartAnim] = useState(false);
+      const lastTapRef = useRef(0);
+
+      const handleImageTap = () => {
+        const now = Date.now();
+        if (now - lastTapRef.current < 300) {
+          if (!post.isLiked) onLike();
+          setShowHeartAnim(true);
+          setTimeout(() => setShowHeartAnim(false), 700);
+        }
+        lastTapRef.current = now;
+      };
+
+      return (
+        <div class={`rounded-2xl border overflow-hidden shadow-sm transition-colors ${darkMode ? 'bg-zinc-900 border-zinc-800/80' : 'bg-white border-zinc-200'}`}>
+          <div class="flex items-center justify-between px-4 py-3">
+            <div class="flex items-center gap-3">
+              <img src={author.avatar} alt={author.username} class="w-9 h-9 rounded-full object-cover border border-zinc-700" />
+              <div>
+                <h4 class={`font-bold text-xs flex items-center gap-1 ${darkMode ? 'text-white' : 'text-black'}`}>
+                  @{author.username}
+                </h4>
+                <p class={`text-[10px] ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>{post.createdAt}</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="relative bg-black flex items-center justify-center cursor-pointer min-h-[240px] overflow-hidden" onClick={handleImageTap}>
+            <img src={post.imageUrl} alt="Meme" class="w-full object-contain max-h-[480px]" />
+            {showHeartAnim && (
+              <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <i data-lucide="heart" class="w-20 h-20 text-white fill-white animate-heart drop-shadow-2xl"></i>
+              </div>
+            )}
+          </div>
+
+          <div class="px-4 pt-3 pb-2">
+            <p class={`text-xs font-medium leading-relaxed ${darkMode ? 'text-zinc-200' : 'text-zinc-800'}`}>{post.caption}</p>
+            {post.tags && post.tags.length > 0 && (
+              <div class="flex flex-wrap gap-1.5 mt-2">
+                {post.tags.map((tag, i) => (
+                  <span key={i} class={`text-[11px] font-semibold ${darkMode ? 'text-zinc-400 hover:text-white' : 'text-zinc-600 hover:text-black'} cursor-pointer`}>#{tag}</span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div class={`px-4 py-2.5 flex items-center justify-between border-t mt-1 ${darkMode ? 'border-zinc-800/60' : 'border-zinc-100'}`}>
+            <div class="flex items-center gap-4">
+              <button onClick={onLike} class="flex items-center gap-1.5">
+                <i data-lucide="heart" class={`w-5 h-5 transition-transform active:scale-125 ${
+                  post.isLiked 
+                    ? (darkMode ? 'text-white fill-white' : 'text-black fill-black') 
+                    : (darkMode ? 'text-zinc-400' : 'text-zinc-500')
+                }`}></i>
+                <span class={`text-xs font-bold ${post.isLiked ? (darkMode ? 'text-white' : 'text-black') : (darkMode ? 'text-zinc-400' : 'text-zinc-500')}`}>{post.likes}</span>
+              </button>
+
+              <button onClick={onOpenComments} class={`flex items-center gap-1.5 ${darkMode ? 'text-zinc-400 hover:text-white' : 'text-zinc-500 hover:text-black'}`}>
+                <i data-lucide="message-square" class="w-5 h-5"></i>
+                <span class="text-xs font-bold">{post.commentsCount}</span>
+              </button>
+            </div>
+
+            <button onClick={onShare} class={`${darkMode ? 'text-zinc-400 hover:text-white' : 'text-zinc-500 hover:text-black'}`}>
+              <i data-lucide="share-2" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // --- COMMENTS MODAL ---
+    function CommentsModal({ post, darkMode, onClose, onAddComment }) {
+      const [input, setInput] = useState('');
+
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        onAddComment(post.id, input);
+        setInput('');
+      };
+
+      return (
+        <div class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex flex-col justify-end">
+          <div class={`border-t rounded-t-3xl h-[75vh] flex flex-col p-4 shadow-2xl ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'}`}>
+            <div class={`w-12 h-1 rounded-full mx-auto mb-3 cursor-pointer ${darkMode ? 'bg-zinc-700' : 'bg-zinc-300'}`} onClick={onClose}></div>
+            
+            <div class={`flex items-center justify-between pb-3 border-b ${darkMode ? 'border-zinc-800' : 'border-zinc-200'}`}>
+              <h3 class={`font-bold text-sm flex items-center gap-2 ${darkMode ? 'text-white' : 'text-black'}`}>
+                Comments <span class={`text-xs px-2 py-0.5 rounded-full ${darkMode ? 'bg-zinc-800 text-zinc-300' : 'bg-zinc-100 text-zinc-700'}`}>{post.commentsCount}</span>
+              </h3>
+              <button onClick={onClose} class={`${darkMode ? 'text-zinc-400 hover:text-white' : 'text-zinc-500 hover:text-black'}`}>
+                <i data-lucide="x" class="w-5 h-5"></i>
+              </button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto py-4 space-y-2.5 custom-scrollbar">
+              {post.comments.length === 0 ? (
+                <div class="text-center py-12 text-zinc-500">
+                  <p class="font-medium text-xs">No comments yet. Start the conversation!</p>
+                </div>
+              ) : (
+                post.comments.map(c => (
+                  <div key={c.id} class={`p-3 rounded-xl border ${darkMode ? 'bg-zinc-950/60 border-zinc-800/80' : 'bg-zinc-50 border-zinc-200'}`}>
+                    <div class="flex items-center justify-between">
+                      <span class={`text-xs font-bold ${darkMode ? 'text-white' : 'text-black'}`}>@{c.username}</span>
+                      <span class={`text-[10px] ${darkMode ? 'text-zinc-500' : 'text-zinc-400'}`}>{c.time}</span>
+                    </div>
+                    <p class={`text-xs mt-1 ${darkMode ? 'text-zinc-300' : 'text-zinc-700'}`}>{c.text}</p>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <form onSubmit={handleSubmit} class={`flex items-center gap-2 pt-3 border-t ${darkMode ? 'border-zinc-800' : 'border-zinc-200'}`}>
+              <input 
+                type="text" 
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                placeholder="Add a comment..." 
+                class={`flex-1 text-xs rounded-xl px-4 py-2.5 border focus:outline-none ${darkMode ? 'bg-zinc-950 border-zinc-800 text-white focus:border-white' : 'bg-zinc-100 border-zinc-300 text-black focus:border-black'}`}
+              />
+              <button type="submit" class={`font-bold px-4 py-2.5 rounded-xl text-xs ${darkMode ? 'bg-white text-black hover:bg-zinc-200' : 'bg-black text-white hover:bg-zinc-800'}`}>
+                Send
+              </button>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    // --- SEARCH TAB ---
+    function SearchTab({ searchQuery, setSearchQuery, users, darkMode }) {
+      return (
+        <div class="p-4 space-y-4">
+          <div class="relative">
+            <i data-lucide="search" class={`w-4 h-4 absolute left-3.5 top-3 ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}></i>
+            <input 
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search users or hashtags..." 
+              class={`w-full text-xs rounded-xl pl-10 pr-4 py-2.5 border focus:outline-none ${darkMode ? 'bg-zinc-900 border-zinc-800 text-white focus:border-white' : 'bg-white border-zinc-300 text-black focus:border-black'}`}
+            />
+          </div>
+
+          <div>
+            <h3 class={`font-bold text-xs mb-3 flex items-center gap-1.5 ${darkMode ? 'text-zinc-300' : 'text-zinc-700'}`}>
+              <i data-lucide="trending-up" class="w-4 h-4"></i> Popular Hashtags
+            </h3>
+            <div class="flex flex-wrap gap-2">
+              {['chucklr', 'memes', 'relatable', 'humor', 'viral', 'funny'].map((tag, i) => (
+                <span key={i} class={`px-3 py-1.5 rounded-xl text-xs font-semibold border cursor-pointer ${darkMode ? 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-white' : 'bg-white border-zinc-200 text-zinc-700 hover:border-black'}`}>
+                  #{tag}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // --- CREATE MEME TAB WITH IMAGE UPLOAD OR URL ---
+    function CreateMemeTab({ darkMode, onSubmit, onCancel }) {
+      const [caption, setCaption] = useState('');
+      const [tags, setTags] = useState('chucklr, meme');
+      const [imageUrl, setImageUrl] = useState('');
+      const fileInputRef = useRef(null);
+
+      // Support Direct File Upload from phone gallery
+      const handleFileChange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            setImageUrl(reader.result);
+          };
+          reader.readAsDataURL(file);
+        }
+      };
+
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        if (!caption.trim() || !imageUrl) return;
+        onSubmit({
+          caption,
+          imageUrl,
+          tags: tags.split(',').map(t => t.trim().replace('#', ''))
+        });
+      };
+
+      return (
+        <div class="p-4 space-y-4">
+          <div class="flex items-center justify-between">
+            <h2 class={`text-base font-black ${darkMode ? 'text-white' : 'text-black'}`}>Create Post</h2>
+            <button onClick={onCancel} class={`text-xs ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>Cancel</button>
+          </div>
+
+          <form onSubmit={handleSubmit} class="space-y-4">
+            {/* Upload Area */}
+            <div 
+              onClick={() => fileInputRef.current?.click()}
+              class={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-colors ${darkMode ? 'bg-zinc-900 border-zinc-800 hover:border-zinc-700' : 'bg-white border-zinc-300 hover:border-zinc-400'}`}
+            >
+              <input 
+                type="file" 
+                accept="image/*" 
+                ref={fileInputRef} 
+                onChange={handleFileChange} 
+                class="hidden" 
+              />
+
+              {imageUrl ? (
+                <div>
+                  <img src={imageUrl} alt="Preview" class="max-h-60 mx-auto rounded-lg object-contain mb-3" />
+                  <span class={`text-xs font-semibold px-3 py-1.5 rounded-lg border inline-block ${darkMode ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-zinc-100 border-zinc-300 text-black'}`}>
+                    Tap to change image
+                  </span>
+                </div>
+              ) : (
+                <div class="space-y-2 py-4">
+                  <i data-lucide="image-plus" class={`w-10 h-10 mx-auto stroke-[1.5] ${darkMode ? 'text-zinc-500' : 'text-zinc-400'}`}></i>
+                  <p class={`text-xs font-semibold ${darkMode ? 'text-zinc-300' : 'text-zinc-700'}`}>Tap to select a meme image</p>
+                  <p class={`text-[10px] ${darkMode ? 'text-zinc-500' : 'text-zinc-400'}`}>Upload from phone gallery or photo library</p>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label class={`text-xs font-bold block mb-1 ${darkMode ? 'text-zinc-400' : 'text-zinc-600'}`}>Caption</label>
+              <textarea 
+                rows="3" 
+                value={caption}
+                onChange={e => setCaption(e.target.value)}
+                placeholder="Write a funny caption..." 
+                class={`w-full border rounded-xl p-3 text-xs focus:outline-none ${darkMode ? 'bg-zinc-900 border-zinc-800 text-white focus:border-white' : 'bg-white border-zinc-300 text-black focus:border-black'}`}
+              ></textarea>
+            </div>
+
+            <div>
+              <label class={`text-xs font-bold block mb-1 ${darkMode ? 'text-zinc-400' : 'text-zinc-600'}`}>Hashtags (comma separated)</label>
+              <input 
+                type="text" 
+                value={tags}
+                onChange={e => setTags(e.target.value)}
+                class={`w-full border rounded-xl p-3 text-xs focus:outline-none ${darkMode ? 'bg-zinc-900 border-zinc-800 text-white focus:border-white' : 'bg-white border-zinc-300 text-black focus:border-black'}`}
+              />
+            </div>
+
+            <button 
+              type="submit" 
+              disabled={!imageUrl || !caption.trim()}
+              class={`w-full font-bold py-3 rounded-xl text-xs transition-transform active:scale-95 disabled:opacity-50 ${darkMode ? 'bg-white text-black hover:bg-zinc-200' : 'bg-black text-white hover:bg-zinc-800'}`}
+            >
+              Post Meme
+            </button>
+          </form>
+        </div>
+      );
+    }
+
+    // --- LEADERBOARD TAB ---
+    function LeaderboardTab({ users, posts, darkMode }) {
+      return (
+        <div class="p-4 space-y-4">
+          <div class="text-center py-2">
+            <h2 class={`text-base font-black uppercase tracking-wider ${darkMode ? 'text-white' : 'text-black'}`}>Chucklr Legends</h2>
+            <p class={`text-xs mt-0.5 ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>Weekly leaderboard</p>
+          </div>
+
+          <div class={`text-center py-10 border rounded-2xl ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'}`}>
+            <i data-lucide="trophy" class={`w-8 h-8 mx-auto mb-2 stroke-[1.5] ${darkMode ? 'text-zinc-600' : 'text-zinc-400'}`}></i>
+            <p class={`text-xs font-semibold ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>Rankings will update as users like & comment on posts!</p>
+          </div>
+        </div>
+      );
+    }
+
+    // --- PROFILE TAB ---
+    function ProfileTab({ currentUser, userPosts, darkMode, onEditProfile }) {
+      return (
+        <div class="p-4 space-y-4">
+          <div class="flex items-center gap-4">
+            <img src={currentUser.avatar} class="w-16 h-16 rounded-full object-cover border-2 border-current" />
+            <div class="flex-1">
+              <h3 class={`font-bold text-sm ${darkMode ? 'text-white' : 'text-black'}`}>{currentUser.displayName}</h3>
+              <p class={`text-xs ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>@{currentUser.username}</p>
+              
+              <button 
+                onClick={onEditProfile}
+                class={`mt-2 text-xs font-semibold px-3 py-1 border rounded-lg ${darkMode ? 'border-zinc-700 text-zinc-300 hover:bg-zinc-800' : 'border-zinc-300 text-zinc-700 hover:bg-zinc-100'}`}
+              >
+                Edit Profile
+              </button>
+            </div>
+          </div>
+
+          <p class={`text-xs ${darkMode ? 'text-zinc-300' : 'text-zinc-700'}`}>{currentUser.bio}</p>
+
+          <div class={`flex justify-around border rounded-xl py-2.5 text-center ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'}`}>
+            <div>
+              <span class={`font-bold text-xs block ${darkMode ? 'text-white' : 'text-black'}`}>{userPosts.length}</span>
+              <span class={`text-[10px] uppercase ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>Memes</span>
+            </div>
+            <div class={`border-r ${darkMode ? 'border-zinc-800' : 'border-zinc-200'}`}></div>
+            <div>
+              <span class={`font-bold text-xs block ${darkMode ? 'text-white' : 'text-black'}`}>{currentUser.followers}</span>
+              <span class={`text-[10px] uppercase ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>Followers</span>
+            </div>
+            <div class={`border-r ${darkMode ? 'border-zinc-800' : 'border-zinc-200'}`}></div>
+            <div>
+              <span class={`font-bold text-xs block ${darkMode ? 'text-white' : 'text-black'}`}>{currentUser.following}</span>
+              <span class={`text-[10px] uppercase ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>Following</span>
+            </div>
+          </div>
+
+          <div>
+            <h4 class={`text-[10px] font-bold uppercase tracking-wider mb-2 ${darkMode ? 'text-zinc-500' : 'text-zinc-400'}`}>Your Posts</h4>
+            {userPosts.length === 0 ? (
+              <p class={`text-xs italic ${darkMode ? 'text-zinc-500' : 'text-zinc-400'}`}>You haven't posted any memes yet.</p>
+            ) : (
+              <div class="grid grid-cols-3 gap-1.5">
+                {userPosts.map(post => (
+                  <div key={post.id} class={`aspect-square rounded-lg overflow-hidden border ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-100 border-zinc-200'}`}>
+                    <img src={post.imageUrl} class="w-full h-full object-cover" />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // --- NOTIFICATIONS TAB ---
+    function NotificationsTab({ notifications, darkMode }) {
+      return (
+        <div class="p-4 space-y-3">
+          <h2 class={`text-sm font-bold mb-2 ${darkMode ? 'text-white' : 'text-black'}`}>Notifications</h2>
+          {notifications.length === 0 ? (
+            <div class="text-center py-12 text-zinc-500">
+              <p class="text-xs font-medium">You're all caught up!</p>
+            </div>
+          ) : (
+            notifications.map(n => (
+              <div key={n.id} class={`p-3 border rounded-xl text-xs ${darkMode ? 'bg-zinc-900 border-zinc-800 text-zinc-200' : 'bg-white border-zinc-200 text-zinc-800'}`}>
+                {n.text}
+              </div>
+            ))
+          )}
+        </div>
+      );
+    }
+
+    // --- SETTINGS TAB ---
+    function SettingsTab({ darkMode, setDarkMode }) {
+      return (
+        <div class="p-4 space-y-4">
+          <h2 class={`text-sm font-bold ${darkMode ? 'text-white' : 'text-black'}`}>Settings</h2>
+
+          <div class="space-y-2">
+            <div class={`flex items-center justify-between p-3 border rounded-xl ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'}`}>
+              <span class={`text-xs font-bold ${darkMode ? 'text-zinc-200' : 'text-zinc-800'}`}>Dark Theme</span>
+              <button 
+                onClick={() => setDarkMode(!darkMode)}
+                class={`w-10 h-5 rounded-full flex items-center px-0.5 transition-colors ${darkMode ? 'bg-white justify-end' : 'bg-zinc-300 justify-start'}`}
+              >
+                <div class={`w-4 h-4 rounded-full ${darkMode ? 'bg-black' : 'bg-white shadow'}`}></div>
+              </button>
+            </div>
+
+            <button 
+              onClick={() => {
+                if (confirm("Clear all locally stored Chucklr posts?")) {
+                  localStorage.removeItem('chucklr_posts');
+                  window.location.reload();
+                }
+              }}
+              class={`w-full text-left p-3 border rounded-xl text-xs font-semibold ${darkMode ? 'bg-zinc-900 border-zinc-800 text-red-400 hover:bg-zinc-800' : 'bg-white border-zinc-200 text-red-600 hover:bg-zinc-100'}`}
+            >
+              Reset Local Storage Feed
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // Render App
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
+
+
