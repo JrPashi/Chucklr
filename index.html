@@ -1,11 +1,10 @@
-<!DOCTYPE html>
+      <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>CHUCKLR - Post the Chaos</title>
   
-  <!-- PWA Meta Tags -->
   <meta name="theme-color" content="#09090b">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -81,7 +80,6 @@
   <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
-    // --- LOGO WITH INTEGRATED SMILE SWOOSH ---
     function ChucklrLogo({ className = "h-8" }) {
       return (
         <div class={`flex items-center select-none ${className}`}>
@@ -95,31 +93,27 @@
       );
     }
 
-    // --- INITIAL BLANK DATA PERSISTED IN LOCAL STORAGE ---
-    const DEFAULT_USER = {
-      id: 'user_me',
-      username: 'creator',
-      displayName: 'Meme Creator',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
-      bio: 'Creating chaos on Chucklr 24/7.',
-      followers: 0,
-      following: 0,
-      postsCount: 0,
-      isFollowing: false
-    };
+    const DEFAULT_AVATAR = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80';
 
     function App() {
       const [currentTab, setCurrentTab] = useState('home');
       
-      // Load saved posts or start with empty array
+      // Load current logged-in user session
+      const [currentUser, setCurrentUser] = useState(() => {
+        const saved = localStorage.getItem('chucklr_session');
+        return saved ? JSON.parse(saved) : null;
+      });
+
+      // Load all registered accounts
+      const [users, setUsers] = useState(() => {
+        const saved = localStorage.getItem('chucklr_users');
+        return saved ? JSON.parse(saved) : {};
+      });
+
+      // Load saved posts
       const [posts, setPosts] = useState(() => {
         const saved = localStorage.getItem('chucklr_posts');
         return saved ? JSON.parse(saved) : [];
-      });
-
-      const [users, setUsers] = useState(() => {
-        const saved = localStorage.getItem('chucklr_users');
-        return saved ? JSON.parse(saved) : { 'user_me': DEFAULT_USER };
       });
 
       const [notifications, setNotifications] = useState([]);
@@ -129,7 +123,10 @@
       const [toastMsg, setToastMsg] = useState('');
       const [darkMode, setDarkMode] = useState(true);
 
-      // Save to localStorage whenever posts/users update
+      // Auth state for login/signup modal
+      const [authUsernameInput, setAuthUsernameInput] = useState('');
+      const [authError, setAuthError] = useState('');
+
       useEffect(() => {
         localStorage.setItem('chucklr_posts', JSON.stringify(posts));
       }, [posts]);
@@ -137,6 +134,14 @@
       useEffect(() => {
         localStorage.setItem('chucklr_users', JSON.stringify(users));
       }, [users]);
+
+      useEffect(() => {
+        if (currentUser) {
+          localStorage.setItem('chucklr_session', JSON.stringify(currentUser));
+        } else {
+          localStorage.removeItem('chucklr_session');
+        }
+      }, [currentUser]);
 
       useEffect(() => {
         if (window.lucide) {
@@ -148,6 +153,64 @@
         setToastMsg(msg);
         setShowToast(true);
         setTimeout(() => setShowToast(false), 2500);
+      };
+
+      // AUTHENTICATION LOGIC (Username Only)
+      const handleAccountAuth = (e) => {
+        e.preventDefault();
+        const cleanName = authUsernameInput.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+        
+        if (!cleanName) {
+          setAuthError('Please enter a valid username');
+          return;
+        }
+
+        if (users[cleanName]) {
+          // Log in existing account
+          setCurrentUser(users[cleanName]);
+          triggerToast(`Welcome back @${cleanName}`);
+        } else {
+          // Create new account
+          const newUser = {
+            id: 'u_' + cleanName,
+            username: cleanName,
+            displayName: cleanName,
+            avatar: DEFAULT_AVATAR,
+            bio: 'Just joined the chaos on Chucklr.',
+            followers: 0,
+            following: 0,
+            postsCount: 0
+          };
+          setUsers(prev => ({ ...prev, [cleanName]: newUser }));
+          setCurrentUser(newUser);
+          triggerToast(`Account @${cleanName} created!`);
+        }
+
+        setAuthUsernameInput('');
+        setAuthError('');
+      };
+
+      const handleLogout = () => {
+        setCurrentUser(null);
+        triggerToast('Logged out');
+      };
+
+      const handleUpdateProfile = (updatedProfile) => {
+        const updatedUser = {
+          ...currentUser,
+          displayName: updatedProfile.displayName || currentUser.displayName,
+          bio: updatedProfile.bio,
+          avatar: updatedProfile.avatar || currentUser.avatar
+        };
+
+        setCurrentUser(updatedUser);
+        setUsers(prev => ({
+          ...prev,
+          [currentUser.username]: updatedUser
+        }));
+
+        triggerToast('Profile updated!');
+        setCurrentTab('profile');
       };
 
       const handleLike = (postId) => {
@@ -165,12 +228,12 @@
       };
 
       const handleAddComment = (postId, commentText) => {
-        if (!commentText.trim()) return;
+        if (!commentText.trim() || !currentUser) return;
         setPosts(prev => prev.map(post => {
           if (post.id === postId) {
             const newComment = {
               id: 'c_' + Date.now(),
-              username: users['user_me'].username,
+              username: currentUser.username,
               text: commentText,
               time: 'Just now'
             };
@@ -186,9 +249,11 @@
       };
 
       const handleCreatePost = (newPostData) => {
+        if (!currentUser) return;
+
         const newPost = {
           id: 'post_' + Date.now(),
-          userId: 'user_me',
+          userId: currentUser.username,
           imageUrl: newPostData.imageUrl,
           caption: newPostData.caption,
           tags: newPostData.tags,
@@ -201,18 +266,54 @@
         
         setPosts([newPost, ...posts]);
         
-        // Update user post count
+        const updatedUser = {
+          ...currentUser,
+          postsCount: (currentUser.postsCount || 0) + 1
+        };
+
+        setCurrentUser(updatedUser);
         setUsers(prev => ({
           ...prev,
-          user_me: {
-            ...prev.user_me,
-            postsCount: (prev.user_me.postsCount || 0) + 1
-          }
+          [currentUser.username]: updatedUser
         }));
 
         setCurrentTab('home');
         triggerToast('Meme posted to feed!');
       };
+
+      // SHOW LOGIN SCREEN IF NOT LOGGED IN
+      if (!currentUser) {
+        return (
+          <div class={`min-h-screen flex flex-col items-center justify-center p-6 max-w-md mx-auto ${darkMode ? 'bg-zinc-950 text-white' : 'bg-zinc-100 text-black'}`}>
+            <div class="w-full space-y-6 text-center">
+              <ChucklrLogo className="h-10 mx-auto justify-center" />
+              <p class={`text-xs ${darkMode ? 'text-zinc-400' : 'text-zinc-600'}`}>Enter a username to jump straight into the chaos.</p>
+
+              <form onSubmit={handleAccountAuth} class="space-y-3 text-left">
+                <div>
+                  <label class={`text-[10px] font-bold uppercase tracking-wider block mb-1 ${darkMode ? 'text-zinc-400' : 'text-zinc-600'}`}>Username</label>
+                  <input 
+                    type="text"
+                    value={authUsernameInput}
+                    onChange={e => setAuthUsernameInput(e.target.value)}
+                    placeholder="e.g. memeking99"
+                    class={`w-full text-xs rounded-xl px-4 py-3 border focus:outline-none ${darkMode ? 'bg-zinc-900 border-zinc-800 text-white focus:border-white' : 'bg-white border-zinc-300 text-black focus:border-black'}`}
+                  />
+                  {authError && <p class="text-red-400 text-[10px] mt-1">{authError}</p>}
+                </div>
+
+                <button 
+                  type="submit"
+                  class={`w-full font-bold py-3 rounded-xl text-xs transition-transform active:scale-95 ${darkMode ? 'bg-white text-black hover:bg-zinc-200' : 'bg-black text-white hover:bg-zinc-800'}`}
+                >
+                  Continue
+                </button>
+              </form>
+              <p class="text-[10px] text-zinc-500">If the username exists, you'll log in. If not, a new account is created instantly!</p>
+            </div>
+          </div>
+        );
+      }
 
       return (
         <div class={`min-h-screen flex flex-col justify-between max-w-md mx-auto ${darkMode ? 'bg-zinc-950 text-zinc-100' : 'bg-zinc-100 text-zinc-900'} relative pb-16 shadow-2xl transition-colors`}>
@@ -267,24 +368,33 @@
             )}
 
             {currentTab === 'leaderboard' && (
-              <LeaderboardTab users={users} posts={posts} darkMode={darkMode} />
+              <LeaderboardTab users={users} darkMode={darkMode} />
             )}
 
             {currentTab === 'profile' && (
               <ProfileTab 
-                currentUser={users['user_me']} 
-                userPosts={posts.filter(p => p.userId === 'user_me')} 
+                currentUser={currentUser} 
+                userPosts={posts.filter(p => p.userId === currentUser.username)} 
                 darkMode={darkMode}
-                onEditProfile={() => setCurrentTab('settings')}
+                onEditProfile={() => setCurrentTab('edit_profile')}
+              />
+            )}
+
+            {currentTab === 'edit_profile' && (
+              <EditProfileTab 
+                currentUser={currentUser} 
+                darkMode={darkMode} 
+                onSave={handleUpdateProfile} 
+                onCancel={() => setCurrentTab('profile')} 
               />
             )}
 
             {currentTab === 'notifications' && (
-              <NotificationsTab notifications={notifications} users={users} darkMode={darkMode} />
+              <NotificationsTab notifications={notifications} darkMode={darkMode} />
             )}
 
             {currentTab === 'settings' && (
-              <SettingsTab darkMode={darkMode} setDarkMode={setDarkMode} />
+              <SettingsTab darkMode={darkMode} setDarkMode={setDarkMode} onLogout={handleLogout} />
             )}
           </main>
 
@@ -323,7 +433,6 @@
               <span class="text-[10px] font-semibold">Search</span>
             </button>
 
-            {/* CREATE BUTTON */}
             <button 
               onClick={() => setCurrentTab('create')} 
               class={`relative -top-3 p-3.5 rounded-full shadow-xl transition-transform active:scale-90 ${darkMode ? 'bg-white text-black' : 'bg-black text-white'}`}
@@ -341,7 +450,7 @@
 
             <button 
               onClick={() => setCurrentTab('profile')} 
-              class={`flex flex-col items-center gap-1 ${currentTab === 'profile' ? (darkMode ? 'text-white' : 'text-black') : (darkMode ? 'text-zinc-500' : 'text-zinc-400')}`}
+              class={`flex flex-col items-center gap-1 ${(currentTab === 'profile' || currentTab === 'edit_profile') ? (darkMode ? 'text-white' : 'text-black') : (darkMode ? 'text-zinc-500' : 'text-zinc-400')}`}
             >
               <i data-lucide="user" class="w-5 h-5"></i>
               <span class="text-[10px] font-semibold">Profile</span>
@@ -352,7 +461,7 @@
       );
     }
 
-    // --- HOME FEED WITH EMPTY STATE ---
+    // --- HOME FEED ---
     function HomeFeed({ posts, users, darkMode, onLike, onOpenComments, onShare, onCreateClick }) {
       if (posts.length === 0) {
         return (
@@ -377,7 +486,7 @@
       return (
         <div class="space-y-4 p-3">
           {posts.map(post => {
-            const author = users[post.userId] || { username: 'creator', avatar: 'https://via.placeholder.com/150' };
+            const author = users[post.userId] || { username: post.userId, avatar: DEFAULT_AVATAR };
             return (
               <PostCard 
                 key={post.id} 
@@ -413,7 +522,7 @@
         <div class={`rounded-2xl border overflow-hidden shadow-sm transition-colors ${darkMode ? 'bg-zinc-900 border-zinc-800/80' : 'bg-white border-zinc-200'}`}>
           <div class="flex items-center justify-between px-4 py-3">
             <div class="flex items-center gap-3">
-              <img src={author.avatar} alt={author.username} class="w-9 h-9 rounded-full object-cover border border-zinc-700" />
+              <img src={author.avatar || DEFAULT_AVATAR} alt={author.username} class="w-9 h-9 rounded-full object-cover border border-zinc-700" />
               <div>
                 <h4 class={`font-bold text-xs flex items-center gap-1 ${darkMode ? 'text-white' : 'text-black'}`}>
                   @{author.username}
@@ -529,6 +638,8 @@
 
     // --- SEARCH TAB ---
     function SearchTab({ searchQuery, setSearchQuery, users, darkMode }) {
+      const userList = Object.values(users).filter(u => u.username.toLowerCase().includes(searchQuery.toLowerCase()));
+
       return (
         <div class="p-4 space-y-4">
           <div class="relative">
@@ -537,35 +648,36 @@
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Search users or hashtags..." 
+              placeholder="Search creators..." 
               class={`w-full text-xs rounded-xl pl-10 pr-4 py-2.5 border focus:outline-none ${darkMode ? 'bg-zinc-900 border-zinc-800 text-white focus:border-white' : 'bg-white border-zinc-300 text-black focus:border-black'}`}
             />
           </div>
 
-          <div>
-            <h3 class={`font-bold text-xs mb-3 flex items-center gap-1.5 ${darkMode ? 'text-zinc-300' : 'text-zinc-700'}`}>
-              <i data-lucide="trending-up" class="w-4 h-4"></i> Popular Hashtags
-            </h3>
-            <div class="flex flex-wrap gap-2">
-              {['chucklr', 'memes', 'relatable', 'humor', 'viral', 'funny'].map((tag, i) => (
-                <span key={i} class={`px-3 py-1.5 rounded-xl text-xs font-semibold border cursor-pointer ${darkMode ? 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-white' : 'bg-white border-zinc-200 text-zinc-700 hover:border-black'}`}>
-                  #{tag}
-                </span>
+          {searchQuery && (
+            <div class="space-y-2">
+              <h3 class="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Users</h3>
+              {userList.map(u => (
+                <div key={u.username} class={`flex items-center gap-3 p-3 border rounded-xl ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'}`}>
+                  <img src={u.avatar || DEFAULT_AVATAR} class="w-8 h-8 rounded-full object-cover" />
+                  <div>
+                    <h4 class={`text-xs font-bold ${darkMode ? 'text-white' : 'text-black'}`}>{u.displayName}</h4>
+                    <p class="text-[10px] text-zinc-500">@{u.username}</p>
+                  </div>
+                </div>
               ))}
             </div>
-          </div>
+          )}
         </div>
       );
     }
 
-    // --- CREATE MEME TAB WITH IMAGE UPLOAD OR URL ---
+    // --- CREATE MEME TAB ---
     function CreateMemeTab({ darkMode, onSubmit, onCancel }) {
       const [caption, setCaption] = useState('');
       const [tags, setTags] = useState('chucklr, meme');
       const [imageUrl, setImageUrl] = useState('');
       const fileInputRef = useRef(null);
 
-      // Support Direct File Upload from phone gallery
       const handleFileChange = (e) => {
         const file = e.target.files[0];
         if (file) {
@@ -595,7 +707,6 @@
           </div>
 
           <form onSubmit={handleSubmit} class="space-y-4">
-            {/* Upload Area */}
             <div 
               onClick={() => fileInputRef.current?.click()}
               class={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-colors ${darkMode ? 'bg-zinc-900 border-zinc-800 hover:border-zinc-700' : 'bg-white border-zinc-300 hover:border-zinc-400'}`}
@@ -619,7 +730,6 @@
                 <div class="space-y-2 py-4">
                   <i data-lucide="image-plus" class={`w-10 h-10 mx-auto stroke-[1.5] ${darkMode ? 'text-zinc-500' : 'text-zinc-400'}`}></i>
                   <p class={`text-xs font-semibold ${darkMode ? 'text-zinc-300' : 'text-zinc-700'}`}>Tap to select a meme image</p>
-                  <p class={`text-[10px] ${darkMode ? 'text-zinc-500' : 'text-zinc-400'}`}>Upload from phone gallery or photo library</p>
                 </div>
               )}
             </div>
@@ -658,17 +768,28 @@
     }
 
     // --- LEADERBOARD TAB ---
-    function LeaderboardTab({ users, posts, darkMode }) {
+    function LeaderboardTab({ users, darkMode }) {
+      const userList = Object.values(users);
       return (
         <div class="p-4 space-y-4">
           <div class="text-center py-2">
             <h2 class={`text-base font-black uppercase tracking-wider ${darkMode ? 'text-white' : 'text-black'}`}>Chucklr Legends</h2>
-            <p class={`text-xs mt-0.5 ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>Weekly leaderboard</p>
+            <p class={`text-xs mt-0.5 ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>Registered Creators</p>
           </div>
 
-          <div class={`text-center py-10 border rounded-2xl ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'}`}>
-            <i data-lucide="trophy" class={`w-8 h-8 mx-auto mb-2 stroke-[1.5] ${darkMode ? 'text-zinc-600' : 'text-zinc-400'}`}></i>
-            <p class={`text-xs font-semibold ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>Rankings will update as users like & comment on posts!</p>
+          <div class="space-y-2">
+            {userList.map(u => (
+              <div key={u.username} class={`flex items-center justify-between p-3 border rounded-xl ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'}`}>
+                <div class="flex items-center gap-3">
+                  <img src={u.avatar || DEFAULT_AVATAR} class="w-9 h-9 rounded-full object-cover" />
+                  <div>
+                    <h4 class={`text-xs font-bold ${darkMode ? 'text-white' : 'text-black'}`}>{u.displayName}</h4>
+                    <p class="text-[10px] text-zinc-500">@{u.username}</p>
+                  </div>
+                </div>
+                <span class="text-xs font-bold text-zinc-400">{u.postsCount || 0} memes</span>
+              </div>
+            ))}
           </div>
         </div>
       );
@@ -679,7 +800,7 @@
       return (
         <div class="p-4 space-y-4">
           <div class="flex items-center gap-4">
-            <img src={currentUser.avatar} class="w-16 h-16 rounded-full object-cover border-2 border-current" />
+            <img src={currentUser.avatar || DEFAULT_AVATAR} class="w-16 h-16 rounded-full object-cover border-2 border-current" />
             <div class="flex-1">
               <h3 class={`font-bold text-sm ${darkMode ? 'text-white' : 'text-black'}`}>{currentUser.displayName}</h3>
               <p class={`text-xs ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>@{currentUser.username}</p>
@@ -688,32 +809,15 @@
                 onClick={onEditProfile}
                 class={`mt-2 text-xs font-semibold px-3 py-1 border rounded-lg ${darkMode ? 'border-zinc-700 text-zinc-300 hover:bg-zinc-800' : 'border-zinc-300 text-zinc-700 hover:bg-zinc-100'}`}
               >
-                Edit Profile
+                Customize Profile
               </button>
             </div>
           </div>
 
           <p class={`text-xs ${darkMode ? 'text-zinc-300' : 'text-zinc-700'}`}>{currentUser.bio}</p>
 
-          <div class={`flex justify-around border rounded-xl py-2.5 text-center ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'}`}>
-            <div>
-              <span class={`font-bold text-xs block ${darkMode ? 'text-white' : 'text-black'}`}>{userPosts.length}</span>
-              <span class={`text-[10px] uppercase ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>Memes</span>
-            </div>
-            <div class={`border-r ${darkMode ? 'border-zinc-800' : 'border-zinc-200'}`}></div>
-            <div>
-              <span class={`font-bold text-xs block ${darkMode ? 'text-white' : 'text-black'}`}>{currentUser.followers}</span>
-              <span class={`text-[10px] uppercase ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>Followers</span>
-            </div>
-            <div class={`border-r ${darkMode ? 'border-zinc-800' : 'border-zinc-200'}`}></div>
-            <div>
-              <span class={`font-bold text-xs block ${darkMode ? 'text-white' : 'text-black'}`}>{currentUser.following}</span>
-              <span class={`text-[10px] uppercase ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>Following</span>
-            </div>
-          </div>
-
           <div>
-            <h4 class={`text-[10px] font-bold uppercase tracking-wider mb-2 ${darkMode ? 'text-zinc-500' : 'text-zinc-400'}`}>Your Posts</h4>
+            <h4 class={`text-[10px] font-bold uppercase tracking-wider mb-2 ${darkMode ? 'text-zinc-500' : 'text-zinc-400'}`}>Your Posts ({userPosts.length})</h4>
             {userPosts.length === 0 ? (
               <p class={`text-xs italic ${darkMode ? 'text-zinc-500' : 'text-zinc-400'}`}>You haven't posted any memes yet.</p>
             ) : (
@@ -730,28 +834,92 @@
       );
     }
 
+    // --- EDIT PROFILE TAB ---
+    function EditProfileTab({ currentUser, darkMode, onSave, onCancel }) {
+      const [displayName, setDisplayName] = useState(currentUser.displayName || '');
+      const [bio, setBio] = useState(currentUser.bio || '');
+      const [avatar, setAvatar] = useState(currentUser.avatar || '');
+      const avatarInputRef = useRef(null);
+
+      const handleAvatarChange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            setAvatar(reader.result);
+          };
+          reader.readAsDataURL(file);
+        }
+      };
+
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        onSave({ displayName, bio, avatar });
+      };
+
+      return (
+        <div class="p-4 space-y-4">
+          <div class="flex items-center justify-between">
+            <h2 class={`text-base font-black ${darkMode ? 'text-white' : 'text-black'}`}>Edit Profile</h2>
+            <button onClick={onCancel} class={`text-xs ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>Cancel</button>
+          </div>
+
+          <form onSubmit={handleSubmit} class="space-y-4">
+            <div class="text-center space-y-2">
+              <img src={avatar || DEFAULT_AVATAR} class="w-20 h-20 rounded-full mx-auto object-cover border-2 border-zinc-700" />
+              <input type="file" accept="image/*" ref={avatarInputRef} onChange={handleAvatarChange} class="hidden" />
+              <button 
+                type="button" 
+                onClick={() => avatarInputRef.current?.click()}
+                class={`text-xs font-semibold px-3 py-1 border rounded-lg ${darkMode ? 'border-zinc-700 text-white' : 'border-zinc-300 text-black'}`}
+              >
+                Change Avatar Photo
+              </button>
+            </div>
+
+            <div>
+              <label class={`text-xs font-bold block mb-1 ${darkMode ? 'text-zinc-400' : 'text-zinc-600'}`}>Display Name</label>
+              <input 
+                type="text" 
+                value={displayName} 
+                onChange={e => setDisplayName(e.target.value)}
+                class={`w-full border rounded-xl p-3 text-xs focus:outline-none ${darkMode ? 'bg-zinc-900 border-zinc-800 text-white focus:border-white' : 'bg-white border-zinc-300 text-black focus:border-black'}`}
+              />
+            </div>
+
+            <div>
+              <label class={`text-xs font-bold block mb-1 ${darkMode ? 'text-zinc-400' : 'text-zinc-600'}`}>Bio</label>
+              <textarea 
+                rows="3" 
+                value={bio} 
+                onChange={e => setBio(e.target.value)}
+                class={`w-full border rounded-xl p-3 text-xs focus:outline-none ${darkMode ? 'bg-zinc-900 border-zinc-800 text-white focus:border-white' : 'bg-white border-zinc-300 text-black focus:border-black'}`}
+              ></textarea>
+            </div>
+
+            <button 
+              type="submit" 
+              class={`w-full font-bold py-3 rounded-xl text-xs transition-transform active:scale-95 ${darkMode ? 'bg-white text-black hover:bg-zinc-200' : 'bg-black text-white hover:bg-zinc-800'}`}
+            >
+              Save Changes
+            </button>
+          </form>
+        </div>
+      );
+    }
+
     // --- NOTIFICATIONS TAB ---
     function NotificationsTab({ notifications, darkMode }) {
       return (
         <div class="p-4 space-y-3">
           <h2 class={`text-sm font-bold mb-2 ${darkMode ? 'text-white' : 'text-black'}`}>Notifications</h2>
-          {notifications.length === 0 ? (
-            <div class="text-center py-12 text-zinc-500">
-              <p class="text-xs font-medium">You're all caught up!</p>
-            </div>
-          ) : (
-            notifications.map(n => (
-              <div key={n.id} class={`p-3 border rounded-xl text-xs ${darkMode ? 'bg-zinc-900 border-zinc-800 text-zinc-200' : 'bg-white border-zinc-200 text-zinc-800'}`}>
-                {n.text}
-              </div>
-            ))
-          )}
+          <div class="text-center py-12 text-zinc-500 text-xs">You're all caught up!</div>
         </div>
       );
     }
 
     // --- SETTINGS TAB ---
-    function SettingsTab({ darkMode, setDarkMode }) {
+    function SettingsTab({ darkMode, setDarkMode, onLogout }) {
       return (
         <div class="p-4 space-y-4">
           <h2 class={`text-sm font-bold ${darkMode ? 'text-white' : 'text-black'}`}>Settings</h2>
@@ -768,26 +936,18 @@
             </div>
 
             <button 
-              onClick={() => {
-                if (confirm("Clear all locally stored Chucklr posts?")) {
-                  localStorage.removeItem('chucklr_posts');
-                  window.location.reload();
-                }
-              }}
+              onClick={onLogout}
               class={`w-full text-left p-3 border rounded-xl text-xs font-semibold ${darkMode ? 'bg-zinc-900 border-zinc-800 text-red-400 hover:bg-zinc-800' : 'bg-white border-zinc-200 text-red-600 hover:bg-zinc-100'}`}
             >
-              Reset Local Storage Feed
+              Switch Account / Log Out
             </button>
           </div>
         </div>
       );
     }
 
-    // Render App
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(<App />);
   </script>
 </body>
 </html>
-
-
