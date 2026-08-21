@@ -45,9 +45,6 @@
   <!-- Babel for JSX -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-  <!-- Lucide Icons -->
-  <script src="https://unpkg.com/lucide@latest"></script>
-
   <style>
     body {
       -webkit-tap-highlight-color: transparent;
@@ -81,33 +78,78 @@
   <script type="text/babel">
     const { useState, useEffect, useRef, Component } = React;
 
+    // --- INLINE SVG ICONS (PREVENTS DOM CONFLICTS) ---
+    const Icons = {
+      Flame: ({ className = "w-5 h-5" }) => (
+        <svg class={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"/></svg>
+      ),
+      Search: ({ className = "w-5 h-5" }) => (
+        <svg class={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+      ),
+      Plus: ({ className = "w-6 h-6" }) => (
+        <svg class={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/></svg>
+      ),
+      Trophy: ({ className = "w-5 h-5" }) => (
+        <svg class={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M5 3h14M5 3a2 2 0 00-2 2v2a5 5 0 005 5h8a5 5 0 005-5V5a2 2 0 00-2-2M5 3H3m14 0h2m-4 11v2a3 3 0 01-3 3H10a3 3 0 01-3-3v-2m4 5v2m-4 0h8"/></svg>
+      ),
+      User: ({ className = "w-5 h-5" }) => (
+        <svg class={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+      ),
+      Heart: ({ className = "w-5 h-5", fill = false }) => (
+        <svg class={className} fill={fill ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 116.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z"/></svg>
+      ),
+      MessageSquare: ({ className = "w-5 h-5" }) => (
+        <svg class={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+      ),
+      Share2: ({ className = "w-4 h-4" }) => (
+        <svg class={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 100-5.367 3 3 0 000 5.367zm0 8a3 3 0 100-5.367 3 3 0 000 5.367z"/></svg>
+      ),
+      Bell: ({ className = "w-5 h-5" }) => (
+        <svg class={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+      ),
+      Settings: ({ className = "w-5 h-5" }) => (
+        <svg class={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+      ),
+      Smile: ({ className = "w-10 h-10" }) => (
+        <svg class={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.5"><path strokeLinecap="round" strokeLinejoin="round" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      ),
+      ImagePlus: ({ className = "w-10 h-10" }) => (
+        <svg class={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.5"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+      ),
+      X: ({ className = "w-5 h-5" }) => (
+        <svg class={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      ),
+      Check: ({ className = "w-4 h-4" }) => (
+        <svg class={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
+      ),
+      TrendingUp: ({ className = "w-4 h-4" }) => (
+        <svg class={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg>
+      )
+    };
+
     // --- ERROR BOUNDARY ---
     class ErrorBoundary extends Component {
       constructor(props) {
         super(props);
-        this.state = { hasError: false, errorMsg: '' };
+        this.state = { hasError: false };
       }
-      static getDerivedStateFromError(error) {
-        return { hasError: true, errorMsg: error?.toString() || 'Unknown error' };
-      }
-      componentDidCatch(error, errorInfo) {
-        console.error("Chucklr Error caught:", error, errorInfo);
+      static getDerivedStateFromError() {
+        return { hasError: true };
       }
       render() {
         if (this.state.hasError) {
           return (
             <div class="p-6 text-center text-white bg-zinc-950 min-h-screen flex flex-col justify-center items-center space-y-4">
               <span class="text-3xl">⚠️</span>
-              <h2 class="font-bold text-sm">Oops! Something went wrong.</h2>
-              <p class="text-[10px] text-zinc-500 max-w-xs">{this.state.errorMsg}</p>
+              <h2 class="font-bold text-sm">Application Reset Required</h2>
               <button 
                 onClick={() => {
-                  localStorage.removeItem('chucklr_posts');
+                  localStorage.clear();
                   window.location.reload();
                 }}
-                class="bg-white text-black text-xs font-bold px-4 py-2 rounded-xl"
+                class="bg-white text-black text-xs font-bold px-4 py-2.5 rounded-xl"
               >
-                Reset & Reload Feed
+                Reset Feed & Reload
               </button>
             </div>
           );
@@ -133,12 +175,12 @@
 
     const processImageFile = (file) => {
       return new Promise((resolve) => {
-        const objectUrl = URL.createObjectURL(file);
-        
-        const img = new Image();
-        img.src = objectUrl;
-        img.onload = () => {
-          try {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+          const img = new Image();
+          img.src = event.target.result;
+          img.onload = () => {
             const maxWidth = 800;
             const maxHeight = 800;
             let width = img.width;
@@ -162,16 +204,11 @@
             const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0, width, height);
             
-            const compressed = canvas.toDataURL('image/jpeg', 0.6);
-            URL.revokeObjectURL(objectUrl);
-            resolve(compressed);
-          } catch (e) {
-            resolve(objectUrl);
-          }
+            resolve(canvas.toDataURL('image/jpeg', 0.6));
+          };
+          img.onerror = () => resolve(event.target.result);
         };
-        img.onerror = () => {
-          resolve(objectUrl);
-        };
+        reader.onerror = () => resolve('');
       });
     };
 
@@ -211,10 +248,8 @@
 
       useEffect(() => {
         try {
-          localStorage.setItem('chucklr_posts', JSON.stringify(posts.slice(0, 20)));
-        } catch (e) {
-          console.warn("Storage warning:", e);
-        }
+          localStorage.setItem('chucklr_posts', JSON.stringify(posts.slice(0, 15)));
+        } catch (e) {}
       }, [posts]);
 
       useEffect(() => {
@@ -232,12 +267,6 @@
           localStorage.removeItem('chucklr_session');
         }
       }, [currentUser]);
-
-      useEffect(() => {
-        if (window.lucide) {
-          window.lucide.createIcons();
-        }
-      });
 
       const triggerToast = (msg) => {
         setToastMsg(msg);
@@ -414,13 +443,13 @@
                 onClick={() => setCurrentTab('notifications')}
                 class={`relative p-2 rounded-full transition-colors ${darkMode ? 'hover:bg-zinc-800 text-white' : 'hover:bg-zinc-200 text-black'}`}
               >
-                <i data-lucide="bell" class="w-5 h-5"></i>
+                <Icons.Bell />
               </button>
               <button 
                 onClick={() => setCurrentTab('settings')}
                 class={`p-2 rounded-full transition-colors ${darkMode ? 'hover:bg-zinc-800 text-white' : 'hover:bg-zinc-200 text-black'}`}
               >
-                <i data-lucide="settings" class="w-5 h-5"></i>
+                <Icons.Settings />
               </button>
             </div>
           </header>
@@ -493,7 +522,7 @@
 
           {showToast && (
             <div class={`fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full font-semibold shadow-2xl flex items-center gap-2 text-xs border ${darkMode ? 'bg-white text-black border-zinc-200' : 'bg-black text-white border-zinc-800'}`}>
-              <i data-lucide="check" class="w-4 h-4"></i> {toastMsg}
+              <Icons.Check /> {toastMsg}
             </div>
           )}
 
@@ -502,7 +531,7 @@
               onClick={() => setCurrentTab('home')} 
               class={`flex flex-col items-center gap-1 ${currentTab === 'home' ? (darkMode ? 'text-white' : 'text-black') : (darkMode ? 'text-zinc-500' : 'text-zinc-400')}`}
             >
-              <i data-lucide="flame" class="w-5 h-5"></i>
+              <Icons.Flame />
               <span class="text-[10px] font-semibold">Feed</span>
             </button>
 
@@ -510,7 +539,7 @@
               onClick={() => setCurrentTab('search')} 
               class={`flex flex-col items-center gap-1 ${currentTab === 'search' ? (darkMode ? 'text-white' : 'text-black') : (darkMode ? 'text-zinc-500' : 'text-zinc-400')}`}
             >
-              <i data-lucide="search" class="w-5 h-5"></i>
+              <Icons.Search />
               <span class="text-[10px] font-semibold">Search</span>
             </button>
 
@@ -518,14 +547,14 @@
               onClick={() => setCurrentTab('create')} 
               class={`relative -top-3 p-3.5 rounded-full shadow-xl transition-transform active:scale-90 ${darkMode ? 'bg-white text-black' : 'bg-black text-white'}`}
             >
-              <i data-lucide="plus" class="w-6 h-6 stroke-[2.5]"></i>
+              <Icons.Plus />
             </button>
 
             <button 
               onClick={() => setCurrentTab('leaderboard')} 
               class={`flex flex-col items-center gap-1 ${currentTab === 'leaderboard' ? (darkMode ? 'text-white' : 'text-black') : (darkMode ? 'text-zinc-500' : 'text-zinc-400')}`}
             >
-              <i data-lucide="trophy" class="w-5 h-5"></i>
+              <Icons.Trophy />
               <span class="text-[10px] font-semibold">Legends</span>
             </button>
 
@@ -533,7 +562,7 @@
               onClick={() => setCurrentTab('profile')} 
               class={`flex flex-col items-center gap-1 ${(currentTab === 'profile' || currentTab === 'edit_profile') ? (darkMode ? 'text-white' : 'text-black') : (darkMode ? 'text-zinc-500' : 'text-zinc-400')}`}
             >
-              <i data-lucide="user" class="w-5 h-5"></i>
+              <Icons.User />
               <span class="text-[10px] font-semibold">Profile</span>
             </button>
           </nav>
@@ -547,7 +576,7 @@
         return (
           <div class="flex flex-col items-center justify-center p-8 text-center min-h-[60vh] space-y-4">
             <div class={`p-4 rounded-full border ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'}`}>
-              <i data-lucide="smile" class="w-10 h-10 stroke-[1.5]"></i>
+              <Icons.Smile />
             </div>
             <div>
               <h3 class={`font-bold text-sm ${darkMode ? 'text-white' : 'text-black'}`}>Nothing funny here... yet.</h3>
@@ -615,7 +644,7 @@
             <img src={post.imageUrl} alt="Meme" class="w-full object-contain max-h-[480px]" />
             {showHeartAnim && (
               <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <i data-lucide="heart" class="w-20 h-20 text-white fill-white animate-heart drop-shadow-2xl"></i>
+                <Icons.Heart className="w-20 h-20 text-white animate-heart drop-shadow-2xl" fill={true} />
               </div>
             )}
           </div>
@@ -634,22 +663,18 @@
           <div class={`px-4 py-2.5 flex items-center justify-between border-t mt-1 ${darkMode ? 'border-zinc-800/60' : 'border-zinc-100'}`}>
             <div class="flex items-center gap-4">
               <button onClick={onLike} class="flex items-center gap-1.5">
-                <i data-lucide="heart" class={`w-5 h-5 transition-transform active:scale-125 ${
-                  post.isLiked 
-                    ? (darkMode ? 'text-white fill-white' : 'text-black fill-black') 
-                    : (darkMode ? 'text-zinc-400' : 'text-zinc-500')
-                }`}></i>
+                <Icons.Heart className="w-5 h-5" fill={post.isLiked} />
                 <span class={`text-xs font-bold ${post.isLiked ? (darkMode ? 'text-white' : 'text-black') : (darkMode ? 'text-zinc-400' : 'text-zinc-500')}`}>{post.likes}</span>
               </button>
 
               <button onClick={onOpenComments} class={`flex items-center gap-1.5 ${darkMode ? 'text-zinc-400 hover:text-white' : 'text-zinc-500 hover:text-black'}`}>
-                <i data-lucide="message-square" class="w-5 h-5"></i>
+                <Icons.MessageSquare />
                 <span class="text-xs font-bold">{post.commentsCount}</span>
               </button>
             </div>
 
             <button onClick={onShare} class={`${darkMode ? 'text-zinc-400 hover:text-white' : 'text-zinc-500 hover:text-black'}`}>
-              <i data-lucide="share-2" class="w-4 h-4"></i>
+              <Icons.Share2 />
             </button>
           </div>
         </div>
@@ -675,7 +700,7 @@
                 Comments <span class={`text-xs px-2 py-0.5 rounded-full ${darkMode ? 'bg-zinc-800 text-zinc-300' : 'bg-zinc-100 text-zinc-700'}`}>{post.commentsCount}</span>
               </h3>
               <button onClick={onClose} class={`${darkMode ? 'text-zinc-400 hover:text-white' : 'text-zinc-500 hover:text-black'}`}>
-                <i data-lucide="x" class="w-5 h-5"></i>
+                <Icons.X />
               </button>
             </div>
 
@@ -720,7 +745,9 @@
       return (
         <div class="p-4 space-y-4">
           <div class="relative">
-            <i data-lucide="search" class={`w-4 h-4 absolute left-3.5 top-3 ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}></i>
+            <div class={`absolute left-3.5 top-3 ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>
+              <Icons.Search className="w-4 h-4" />
+            </div>
             <input 
               type="text"
               value={searchQuery}
@@ -763,7 +790,7 @@
             const processedUrl = await processImageFile(file);
             setImageUrl(processedUrl);
           } catch (err) {
-            console.error("Image processing error", err);
+            console.error(err);
           } finally {
             setIsCompressing(false);
           }
@@ -813,7 +840,7 @@
                 </div>
               ) : (
                 <div class="space-y-2 py-4">
-                  <i data-lucide="image-plus" class={`w-10 h-10 mx-auto stroke-[1.5] ${darkMode ? 'text-zinc-500' : 'text-zinc-400'}`}></i>
+                  <Icons.ImagePlus className="w-10 h-10 mx-auto stroke-[1.5]" />
                   <p class={`text-xs font-semibold ${darkMode ? 'text-zinc-300' : 'text-zinc-700'}`}>Tap to select a meme image</p>
                 </div>
               )}
@@ -932,7 +959,7 @@
             const compressedAvatar = await processImageFile(file);
             setAvatar(compressedAvatar);
           } catch(err) {
-            console.error("Avatar error", err);
+            console.error(err);
           } finally {
             setIsCompressing(false);
           }
