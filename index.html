@@ -77,6 +77,24 @@
   <script type="text/babel">
     const { useState, useEffect, useRef, Component } = React;
 
+    // --- HELPER FUNCTION: RELATIVE TIMESTAMP FORMATTER ---
+    function formatTimeAgo(timestamp) {
+      if (!timestamp) return 'Just now';
+      const now = Date.now();
+      const elapsed = Math.floor((now - timestamp) / 1000); // seconds
+
+      if (elapsed < 60) return 'Just now';
+      const minutes = Math.floor(elapsed / 60);
+      if (minutes < 60) return `${minutes}m ago`;
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return `${hours}h ago`;
+      const days = Math.floor(hours / 24);
+      if (days < 7) return `${days}d ago`;
+      
+      const date = new Date(timestamp);
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    }
+
     // --- INLINE SVG ICONS ---
     const Icons = {
       Flame: ({ className = "w-5 h-5" }) => (
@@ -237,20 +255,20 @@
 
       const [notifications, setNotifications] = useState([]);
       const [activePostForComments, setActivePostForComments] = useState(null);
+      const [viewUserModal, setViewUserModal] = useState(null); // To view other user profiles
       const [searchQuery, setSearchQuery] = useState('');
       const [showToast, setShowToast] = useState(false);
       const [toastMsg, setToastMsg] = useState('');
       const [darkMode, setDarkMode] = useState(true);
 
-      // Auth Mode (Login vs Sign Up)
-      const [authMode, setAuthMode] = useState('signup'); // 'signup' or 'login'
+      const [authMode, setAuthMode] = useState('signup');
       const [authUsernameInput, setAuthUsernameInput] = useState('');
       const [authPasswordInput, setAuthPasswordInput] = useState('');
       const [authError, setAuthError] = useState('');
 
       useEffect(() => {
         try {
-          localStorage.setItem('chucklr_posts', JSON.stringify(posts.slice(0, 15)));
+          localStorage.setItem('chucklr_posts', JSON.stringify(posts.slice(0, 20)));
         } catch (e) {}
       }, [posts]);
 
@@ -276,7 +294,6 @@
         setTimeout(() => setShowToast(false), 2500);
       };
 
-      // AUTHENTICATION LOGIC WITH PASSWORD
       const handleAccountAuth = (e) => {
         e.preventDefault();
         const cleanName = authUsernameInput.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
@@ -293,7 +310,6 @@
         }
 
         if (authMode === 'login') {
-          // LOGIN
           const existingUser = users[cleanName];
           if (!existingUser) {
             setAuthError('Username not found. Please create an account.');
@@ -306,7 +322,6 @@
           setCurrentUser(existingUser);
           triggerToast(`Welcome back @${cleanName}`);
         } else {
-          // SIGN UP
           if (users[cleanName]) {
             setAuthError('Username already taken. Please pick another or log in.');
             return;
@@ -318,8 +333,8 @@
             displayName: cleanName,
             avatar: DEFAULT_AVATAR,
             bio: 'Just joined the chaos on Chucklr.',
-            followers: 0,
-            following: 0,
+            followersList: [], // List of user IDs following this user
+            followingList: [], // List of user IDs this user is following
             postsCount: 0
           };
           setUsers(prev => ({ ...prev, [cleanName]: newUser }));
@@ -355,6 +370,45 @@
         setCurrentTab('profile');
       };
 
+      // FOLLOW / UNFOLLOW USER LOGIC
+      const handleToggleFollow = (targetUsername) => {
+        if (!currentUser || targetUsername === currentUser.username) return;
+
+        setUsers(prev => {
+          const target = prev[targetUsername];
+          if (!target) return prev;
+
+          const me = prev[currentUser.username] || currentUser;
+          const myFollowing = me.followingList || [];
+          const targetFollowers = target.followersList || [];
+
+          const isFollowing = myFollowing.includes(targetUsername);
+
+          let newMyFollowing, newTargetFollowers;
+
+          if (isFollowing) {
+            newMyFollowing = myFollowing.filter(u => u !== targetUsername);
+            newTargetFollowers = targetFollowers.filter(u => u !== currentUser.username);
+            triggerToast(`Unfollowed @${targetUsername}`);
+          } else {
+            newMyFollowing = [...myFollowing, targetUsername];
+            newTargetFollowers = [...targetFollowers, currentUser.username];
+            triggerToast(`Followed @${targetUsername}!`);
+          }
+
+          const updatedMe = { ...me, followingList: newMyFollowing };
+          const updatedTarget = { ...target, followersList: newTargetFollowers };
+
+          setCurrentUser(updatedMe);
+
+          return {
+            ...prev,
+            [currentUser.username]: updatedMe,
+            [targetUsername]: updatedTarget
+          };
+        });
+      };
+
       const handleLike = (postId) => {
         setPosts(prev => prev.map(post => {
           if (post.id === postId) {
@@ -369,11 +423,9 @@
         }));
       };
 
-      // DELETE POST FUNCTION
       const handleDeletePost = (postId) => {
         setPosts(prev => prev.filter(p => p.id !== postId));
         
-        // Decrement user post count
         const updatedUser = {
           ...currentUser,
           postsCount: Math.max(0, (currentUser.postsCount || 1) - 1)
@@ -420,7 +472,7 @@
           likes: 0,
           isLiked: false,
           commentsCount: 0,
-          createdAt: 'Just now',
+          timestamp: Date.now(),
           comments: []
         };
         
@@ -441,14 +493,12 @@
         triggerToast('Meme posted to feed!');
       };
 
-      // AUTH LOGIN / SIGNUP VIEW
       if (!currentUser) {
         return (
           <div class={`min-h-screen flex flex-col items-center justify-center p-6 max-w-md mx-auto ${darkMode ? 'bg-zinc-950 text-white' : 'bg-zinc-100 text-black'}`}>
             <div class="w-full space-y-6 text-center">
               <ChucklrLogo className="h-10 mx-auto justify-center" />
               
-              {/* Toggle Login / Signup */}
               <div class="flex bg-zinc-900 border border-zinc-800 p-1 rounded-xl">
                 <button 
                   onClick={() => { setAuthMode('signup'); setAuthError(''); }}
@@ -535,6 +585,8 @@
                 onLike={handleLike} 
                 onDeletePost={handleDeletePost}
                 onOpenComments={(p) => setActivePostForComments(p)}
+                onOpenProfile={(u) => setViewUserModal(u)}
+                onToggleFollow={handleToggleFollow}
                 onShare={() => triggerToast('Link copied to clipboard')}
                 onCreateClick={() => setCurrentTab('create')}
               />
@@ -545,7 +597,10 @@
                 searchQuery={searchQuery}
                 setSearchQuery={setSearchQuery}
                 users={users}
+                currentUser={currentUser}
                 darkMode={darkMode}
+                onOpenProfile={(u) => setViewUserModal(u)}
+                onToggleFollow={handleToggleFollow}
               />
             )}
 
@@ -554,7 +609,13 @@
             )}
 
             {currentTab === 'leaderboard' && (
-              <LeaderboardTab users={users} darkMode={darkMode} />
+              <LeaderboardTab 
+                users={users} 
+                currentUser={currentUser} 
+                darkMode={darkMode} 
+                onOpenProfile={(u) => setViewUserModal(u)}
+                onToggleFollow={handleToggleFollow}
+              />
             )}
 
             {currentTab === 'profile' && (
@@ -585,6 +646,7 @@
             )}
           </main>
 
+          {/* COMMENTS MODAL */}
           {activePostForComments && (
             <CommentsModal 
               post={posts.find(p => p.id === activePostForComments.id) || activePostForComments} 
@@ -594,6 +656,19 @@
             />
           )}
 
+          {/* OTHER USER PROFILE MODAL */}
+          {viewUserModal && (
+            <UserProfileModal 
+              user={users[viewUserModal.username] || viewUserModal}
+              userPosts={posts.filter(p => p.userId === viewUserModal.username)}
+              currentUser={currentUser}
+              darkMode={darkMode}
+              onClose={() => setViewUserModal(null)}
+              onToggleFollow={handleToggleFollow}
+            />
+          )}
+
+          {/* TOAST */}
           {showToast && (
             <div class={`fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full font-semibold shadow-2xl flex items-center gap-2 text-xs border ${darkMode ? 'bg-white text-black border-zinc-200' : 'bg-black text-white border-zinc-800'}`}>
               <Icons.Check /> {toastMsg}
@@ -645,7 +720,7 @@
       );
     }
 
-    function HomeFeed({ posts, users, currentUser, darkMode, onLike, onDeletePost, onOpenComments, onShare, onCreateClick }) {
+    function HomeFeed({ posts, users, currentUser, darkMode, onLike, onDeletePost, onOpenComments, onOpenProfile, onToggleFollow, onShare, onCreateClick }) {
       if (posts.length === 0) {
         return (
           <div class="flex flex-col items-center justify-center p-8 text-center min-h-[60vh] space-y-4">
@@ -680,6 +755,8 @@
                 onLike={() => onLike(post.id)}
                 onDeletePost={() => onDeletePost(post.id)}
                 onOpenComments={() => onOpenComments(post)}
+                onOpenProfile={() => onOpenProfile(author)}
+                onToggleFollow={() => onToggleFollow(author.username)}
                 onShare={onShare}
               />
             );
@@ -688,10 +765,13 @@
       );
     }
 
-    function PostCard({ post, author, currentUser, darkMode, onLike, onDeletePost, onOpenComments, onShare }) {
+    function PostCard({ post, author, currentUser, darkMode, onLike, onDeletePost, onOpenComments, onOpenProfile, onToggleFollow, onShare }) {
       const [showHeartAnim, setShowHeartAnim] = useState(false);
       const lastTapRef = useRef(0);
       const isOwner = currentUser && currentUser.username === post.userId;
+      
+      const myFollowing = (currentUser && currentUser.followingList) || [];
+      const isFollowing = myFollowing.includes(author.username);
 
       const handleImageTap = () => {
         const now = Date.now();
@@ -706,26 +786,40 @@
       return (
         <div class={`rounded-2xl border overflow-hidden shadow-sm transition-colors ${darkMode ? 'bg-zinc-900 border-zinc-800/80' : 'bg-white border-zinc-200'}`}>
           <div class="flex items-center justify-between px-4 py-3">
-            <div class="flex items-center gap-3">
+            <div class="flex items-center gap-3 cursor-pointer" onClick={onOpenProfile}>
               <img src={author.avatar || DEFAULT_AVATAR} alt={author.username} class="w-9 h-9 rounded-full object-cover border border-zinc-700" />
               <div>
                 <h4 class={`font-bold text-xs flex items-center gap-1 ${darkMode ? 'text-white' : 'text-black'}`}>
                   @{author.username}
                 </h4>
-                <p class={`text-[10px] ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>{post.createdAt}</p>
+                <p class={`text-[10px] ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>{formatTimeAgo(post.timestamp)}</p>
               </div>
             </div>
 
-            {/* DELETE BUTTON FOR POST OWNER */}
-            {isOwner && (
-              <button 
-                onClick={onDeletePost} 
-                title="Delete Post" 
-                class="p-1.5 text-zinc-500 hover:text-red-400 transition-colors"
-              >
-                <Icons.Trash />
-              </button>
-            )}
+            <div class="flex items-center gap-2">
+              {!isOwner && (
+                <button 
+                  onClick={onToggleFollow}
+                  class={`text-[11px] font-bold px-3 py-1 rounded-full border transition-all ${
+                    isFollowing 
+                      ? 'border-zinc-700 text-zinc-400 bg-zinc-800' 
+                      : (darkMode ? 'border-white text-white bg-white/10' : 'border-black text-black bg-black/5')
+                  }`}
+                >
+                  {isFollowing ? 'Following' : '+ Follow'}
+                </button>
+              )}
+
+              {isOwner && (
+                <button 
+                  onClick={onDeletePost} 
+                  title="Delete Post" 
+                  class="p-1.5 text-zinc-500 hover:text-red-400 transition-colors"
+                >
+                  <Icons.Trash />
+                </button>
+              )}
+            </div>
           </div>
 
           <div class="relative bg-black flex items-center justify-center cursor-pointer min-h-[240px] overflow-hidden" onClick={handleImageTap}>
@@ -827,8 +921,94 @@
       );
     }
 
-    function SearchTab({ searchQuery, setSearchQuery, users, darkMode }) {
-      const userList = Object.values(users).filter(u => u.username.toLowerCase().includes(searchQuery.toLowerCase()));
+    // --- OTHER USER PROFILE MODAL ---
+    function UserProfileModal({ user, userPosts, currentUser, darkMode, onClose, onToggleFollow }) {
+      const myFollowing = (currentUser && currentUser.followingList) || [];
+      const isFollowing = myFollowing.includes(user.username);
+      const isOwner = currentUser && currentUser.username === user.username;
+
+      const followersCount = (user.followersList && user.followersList.length) || 0;
+      const followingCount = (user.followingList && user.followingList.length) || 0;
+
+      return (
+        <div class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col justify-end">
+          <div class={`border-t rounded-t-3xl h-[85vh] flex flex-col p-4 shadow-2xl ${darkMode ? 'bg-zinc-950 border-zinc-800' : 'bg-white border-zinc-200'}`}>
+            <div class={`w-12 h-1 rounded-full mx-auto mb-2 cursor-pointer ${darkMode ? 'bg-zinc-700' : 'bg-zinc-300'}`} onClick={onClose}></div>
+
+            <div class="flex justify-end">
+              <button onClick={onClose} class={`p-1 ${darkMode ? 'text-zinc-400 hover:text-white' : 'text-zinc-500 hover:text-black'}`}>
+                <Icons.X />
+              </button>
+            </div>
+
+            <div class="overflow-y-auto custom-scrollbar flex-1 space-y-4 pt-1">
+              <div class="flex items-center gap-4">
+                <img src={user.avatar || DEFAULT_AVATAR} class="w-16 h-16 rounded-full object-cover border-2 border-current" />
+                <div class="flex-1">
+                  <h3 class={`font-bold text-sm ${darkMode ? 'text-white' : 'text-black'}`}>{user.displayName}</h3>
+                  <p class={`text-xs ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>@{user.username}</p>
+                  
+                  {!isOwner && (
+                    <button 
+                      onClick={() => onToggleFollow(user.username)}
+                      class={`mt-2 text-xs font-semibold px-4 py-1 border rounded-lg transition-colors ${
+                        isFollowing 
+                          ? 'border-zinc-700 text-zinc-400 bg-zinc-800' 
+                          : (darkMode ? 'border-white text-white bg-white/10' : 'border-black text-black bg-black/5')
+                      }`}
+                    >
+                      {isFollowing ? 'Following' : '+ Follow'}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <p class={`text-xs ${darkMode ? 'text-zinc-300' : 'text-zinc-700'}`}>{user.bio}</p>
+
+              <div class={`flex justify-around border rounded-xl py-2.5 text-center ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-50 border-zinc-200'}`}>
+                <div>
+                  <span class={`font-bold text-xs block ${darkMode ? 'text-white' : 'text-black'}`}>{userPosts.length}</span>
+                  <span class={`text-[10px] uppercase ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>Memes</span>
+                </div>
+                <div class={`border-r ${darkMode ? 'border-zinc-800' : 'border-zinc-200'}`}></div>
+                <div>
+                  <span class={`font-bold text-xs block ${darkMode ? 'text-white' : 'text-black'}`}>{followersCount}</span>
+                  <span class={`text-[10px] uppercase ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>Followers</span>
+                </div>
+                <div class={`border-r ${darkMode ? 'border-zinc-800' : 'border-zinc-200'}`}></div>
+                <div>
+                  <span class={`font-bold text-xs block ${darkMode ? 'text-white' : 'text-black'}`}>{followingCount}</span>
+                  <span class={`text-[10px] uppercase ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>Following</span>
+                </div>
+              </div>
+
+              <div>
+                <h4 class={`text-[10px] font-bold uppercase tracking-wider mb-2 ${darkMode ? 'text-zinc-500' : 'text-zinc-400'}`}>Memes</h4>
+                {userPosts.length === 0 ? (
+                  <p class={`text-xs italic ${darkMode ? 'text-zinc-500' : 'text-zinc-400'}`}>This user hasn't posted any memes yet.</p>
+                ) : (
+                  <div class="grid grid-cols-3 gap-1.5">
+                    {userPosts.map(post => (
+                      <div key={post.id} class={`aspect-square rounded-lg overflow-hidden border ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-100 border-zinc-200'}`}>
+                        <img src={post.imageUrl} class="w-full h-full object-cover" />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function SearchTab({ searchQuery, setSearchQuery, users, currentUser, darkMode, onOpenProfile, onToggleFollow }) {
+      const userList = Object.values(users).filter(u => 
+        u.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (u.displayName && u.displayName.toLowerCase().includes(searchQuery.toLowerCase()))
+      );
+
+      const myFollowing = (currentUser && currentUser.followingList) || [];
 
       return (
         <div class="p-4 space-y-4">
@@ -840,25 +1020,49 @@
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Search creators..." 
+              placeholder="Search creators by username..." 
               class={`w-full text-xs rounded-xl pl-10 pr-4 py-2.5 border focus:outline-none ${darkMode ? 'bg-zinc-900 border-zinc-800 text-white focus:border-white' : 'bg-white border-zinc-300 text-black focus:border-black'}`}
             />
           </div>
 
-          {searchQuery && (
-            <div class="space-y-2">
-              <h3 class="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Users</h3>
-              {userList.map(u => (
-                <div key={u.username} class={`flex items-center gap-3 p-3 border rounded-xl ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'}`}>
-                  <img src={u.avatar || DEFAULT_AVATAR} class="w-8 h-8 rounded-full object-cover" />
-                  <div>
-                    <h4 class={`text-xs font-bold ${darkMode ? 'text-white' : 'text-black'}`}>{u.displayName}</h4>
-                    <p class="text-[10px] text-zinc-500">@{u.username}</p>
+          <div class="space-y-2">
+            <h3 class="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+              {searchQuery ? `Search Results (${userList.length})` : 'Registered Creators'}
+            </h3>
+            
+            {userList.length === 0 ? (
+              <p class={`text-xs italic ${darkMode ? 'text-zinc-500' : 'text-zinc-400'}`}>No accounts found matching "{searchQuery}"</p>
+            ) : (
+              userList.map(u => {
+                const isMe = currentUser && currentUser.username === u.username;
+                const isFollowing = myFollowing.includes(u.username);
+                return (
+                  <div key={u.username} class={`flex items-center justify-between p-3 border rounded-xl ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'}`}>
+                    <div class="flex items-center gap-3 cursor-pointer flex-1" onClick={() => onOpenProfile(u)}>
+                      <img src={u.avatar || DEFAULT_AVATAR} class="w-9 h-9 rounded-full object-cover" />
+                      <div>
+                        <h4 class={`text-xs font-bold ${darkMode ? 'text-white' : 'text-black'}`}>{u.displayName}</h4>
+                        <p class="text-[10px] text-zinc-500">@{u.username}</p>
+                      </div>
+                    </div>
+
+                    {!isMe && (
+                      <button 
+                        onClick={() => onToggleFollow(u.username)}
+                        class={`text-[11px] font-bold px-3 py-1 rounded-full border transition-all ${
+                          isFollowing 
+                            ? 'border-zinc-700 text-zinc-400 bg-zinc-800' 
+                            : (darkMode ? 'border-white text-white bg-white/10' : 'border-black text-black bg-black/5')
+                        }`}
+                      >
+                        {isFollowing ? 'Following' : '+ Follow'}
+                      </button>
+                    )}
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
+                );
+              })
+            )}
+          </div>
         </div>
       );
     }
@@ -967,34 +1171,56 @@
       );
     }
 
-    function LeaderboardTab({ users, darkMode }) {
-      const userList = Object.values(users);
+    function LeaderboardTab({ users, currentUser, darkMode, onOpenProfile, onToggleFollow }) {
+      const userList = Object.values(users).sort((a, b) => (b.postsCount || 0) - (a.postsCount || 0));
+      const myFollowing = (currentUser && currentUser.followingList) || [];
+
       return (
         <div class="p-4 space-y-4">
           <div class="text-center py-2">
             <h2 class={`text-base font-black uppercase tracking-wider ${darkMode ? 'text-white' : 'text-black'}`}>Chucklr Legends</h2>
-            <p class={`text-xs mt-0.5 ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>Registered Creators</p>
+            <p class={`text-xs mt-0.5 ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>Top Creators Ranked</p>
           </div>
 
           <div class="space-y-2">
-            {userList.map(u => (
-              <div key={u.username} class={`flex items-center justify-between p-3 border rounded-xl ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'}`}>
-                <div class="flex items-center gap-3">
-                  <img src={u.avatar || DEFAULT_AVATAR} class="w-9 h-9 rounded-full object-cover" />
-                  <div>
-                    <h4 class={`text-xs font-bold ${darkMode ? 'text-white' : 'text-black'}`}>{u.displayName}</h4>
-                    <p class="text-[10px] text-zinc-500">@{u.username}</p>
+            {userList.map((u, index) => {
+              const isMe = currentUser && currentUser.username === u.username;
+              const isFollowing = myFollowing.includes(u.username);
+              return (
+                <div key={u.username} class={`flex items-center justify-between p-3 border rounded-xl ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'}`}>
+                  <div class="flex items-center gap-3 cursor-pointer flex-1" onClick={() => onOpenProfile(u)}>
+                    <span class="font-bold text-xs w-4 text-zinc-500">#{index + 1}</span>
+                    <img src={u.avatar || DEFAULT_AVATAR} class="w-9 h-9 rounded-full object-cover" />
+                    <div>
+                      <h4 class={`text-xs font-bold ${darkMode ? 'text-white' : 'text-black'}`}>{u.displayName}</h4>
+                      <p class="text-[10px] text-zinc-500">@{u.username} • {u.postsCount || 0} memes</p>
+                    </div>
                   </div>
+
+                  {!isMe && (
+                    <button 
+                      onClick={() => onToggleFollow(u.username)}
+                      class={`text-[11px] font-bold px-3 py-1 rounded-full border transition-all ${
+                        isFollowing 
+                          ? 'border-zinc-700 text-zinc-400 bg-zinc-800' 
+                          : (darkMode ? 'border-white text-white bg-white/10' : 'border-black text-black bg-black/5')
+                      }`}
+                    >
+                      {isFollowing ? 'Following' : '+ Follow'}
+                    </button>
+                  )}
                 </div>
-                <span class="text-xs font-bold text-zinc-400">{u.postsCount || 0} memes</span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       );
     }
 
     function ProfileTab({ currentUser, userPosts, darkMode, onDeletePost, onEditProfile }) {
+      const followersCount = (currentUser.followersList && currentUser.followersList.length) || 0;
+      const followingCount = (currentUser.followingList && currentUser.followingList.length) || 0;
+
       return (
         <div class="p-4 space-y-4">
           <div class="flex items-center gap-4">
@@ -1013,6 +1239,23 @@
           </div>
 
           <p class={`text-xs ${darkMode ? 'text-zinc-300' : 'text-zinc-700'}`}>{currentUser.bio}</p>
+
+          <div class={`flex justify-around border rounded-xl py-2.5 text-center ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-50 border-zinc-200'}`}>
+            <div>
+              <span class={`font-bold text-xs block ${darkMode ? 'text-white' : 'text-black'}`}>{userPosts.length}</span>
+              <span class={`text-[10px] uppercase ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>Memes</span>
+            </div>
+            <div class={`border-r ${darkMode ? 'border-zinc-800' : 'border-zinc-200'}`}></div>
+            <div>
+              <span class={`font-bold text-xs block ${darkMode ? 'text-white' : 'text-black'}`}>{followersCount}</span>
+              <span class={`text-[10px] uppercase ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>Followers</span>
+            </div>
+            <div class={`border-r ${darkMode ? 'border-zinc-800' : 'border-zinc-200'}`}></div>
+            <div>
+              <span class={`font-bold text-xs block ${darkMode ? 'text-white' : 'text-black'}`}>{followingCount}</span>
+              <span class={`text-[10px] uppercase ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>Following</span>
+            </div>
+          </div>
 
           <div>
             <h4 class={`text-[10px] font-bold uppercase tracking-wider mb-2 ${darkMode ? 'text-zinc-500' : 'text-zinc-400'}`}>Your Posts ({userPosts.length})</h4>
