@@ -77,11 +77,11 @@
   <script type="text/babel">
     const { useState, useEffect, useRef, Component } = React;
 
-    // --- HELPER FUNCTION: RELATIVE TIMESTAMP FORMATTER ---
+    // --- RELATIVE TIMESTAMP FORMATTER ---
     function formatTimeAgo(timestamp) {
       if (!timestamp) return 'Just now';
       const now = Date.now();
-      const elapsed = Math.floor((now - timestamp) / 1000); // seconds
+      const elapsed = Math.floor((now - timestamp) / 1000);
 
       if (elapsed < 60) return 'Just now';
       const minutes = Math.floor(elapsed / 60);
@@ -144,7 +144,34 @@
       )
     };
 
-    // --- ERROR BOUNDARY ---
+    // --- REAL-TIME INTERNET CLOUD STORAGE API ---
+    const CLOUD_STORE_URL = 'https://keyvalue.openkv.space/v1/chucklr_global_db';
+
+    async function fetchCloudData() {
+      try {
+        const res = await fetch(CLOUD_STORE_URL);
+        if (res.ok) {
+          const data = await res.json();
+          return data || { users: {}, posts: [] };
+        }
+      } catch (e) {
+        console.warn("Cloud fetch fallback", e);
+      }
+      return null;
+    }
+
+    async function syncCloudData(payload) {
+      try {
+        await fetch(CLOUD_STORE_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } catch (e) {
+        console.warn("Cloud save fallback", e);
+      }
+    }
+
     class ErrorBoundary extends Component {
       constructor(props) {
         super(props);
@@ -255,7 +282,7 @@
 
       const [notifications, setNotifications] = useState([]);
       const [activePostForComments, setActivePostForComments] = useState(null);
-      const [viewUserModal, setViewUserModal] = useState(null); // To view other user profiles
+      const [viewUserModal, setViewUserModal] = useState(null);
       const [searchQuery, setSearchQuery] = useState('');
       const [showToast, setShowToast] = useState(false);
       const [toastMsg, setToastMsg] = useState('');
@@ -266,17 +293,43 @@
       const [authPasswordInput, setAuthPasswordInput] = useState('');
       const [authError, setAuthError] = useState('');
 
+      // FETCH CLOUD DATA ON LOAD & PERIODICALLY SYNC
       useEffect(() => {
-        try {
-          localStorage.setItem('chucklr_posts', JSON.stringify(posts.slice(0, 20)));
-        } catch (e) {}
-      }, [posts]);
+        async function loadCloud() {
+          const cloudData = await fetchCloudData();
+          if (cloudData) {
+            if (cloudData.users) {
+              setUsers(prev => ({ ...prev, ...cloudData.users }));
+              localStorage.setItem('chucklr_users', JSON.stringify({ ...users, ...cloudData.users }));
+            }
+            if (cloudData.posts && Array.isArray(cloudData.posts)) {
+              setPosts(cloudData.posts);
+              localStorage.setItem('chucklr_posts', JSON.stringify(cloudData.posts));
+            }
+          }
+        }
+        loadCloud();
 
-      useEffect(() => {
+        // Polling interval every 5s for live cross-device updates
+        const timer = setInterval(loadCloud, 5000);
+        return () => clearInterval(timer);
+      }, []);
+
+      // SAVE TO CLOUD AND LOCAL STORAGE
+      const updateAndSync = (newUsers, newPosts) => {
+        const u = newUsers || users;
+        const p = newPosts || posts;
+        
+        setUsers(u);
+        setPosts(p);
+
         try {
-          localStorage.setItem('chucklr_users', JSON.stringify(users));
-        } catch (e) {}
-      }, [users]);
+          localStorage.setItem('chucklr_users', JSON.stringify(u));
+          localStorage.setItem('chucklr_posts', JSON.stringify(p.slice(0, 15)));
+        } catch(e) {}
+
+        syncCloudData({ users: u, posts: p.slice(0, 15) });
+      };
 
       useEffect(() => {
         if (currentUser) {
@@ -333,11 +386,13 @@
             displayName: cleanName,
             avatar: DEFAULT_AVATAR,
             bio: 'Just joined the chaos on Chucklr.',
-            followersList: [], // List of user IDs following this user
-            followingList: [], // List of user IDs this user is following
+            followersList: [],
+            followingList: [],
             postsCount: 0
           };
-          setUsers(prev => ({ ...prev, [cleanName]: newUser }));
+          
+          const updatedUsers = { ...users, [cleanName]: newUser };
+          updateAndSync(updatedUsers, null);
           setCurrentUser(newUser);
           triggerToast(`Account @${cleanName} created!`);
         }
@@ -361,56 +416,56 @@
         };
 
         setCurrentUser(updatedUser);
-        setUsers(prev => ({
-          ...prev,
+        const updatedUsers = {
+          ...users,
           [currentUser.username]: updatedUser
-        }));
+        };
 
+        updateAndSync(updatedUsers, null);
         triggerToast('Profile updated!');
         setCurrentTab('profile');
       };
 
-      // FOLLOW / UNFOLLOW USER LOGIC
       const handleToggleFollow = (targetUsername) => {
         if (!currentUser || targetUsername === currentUser.username) return;
 
-        setUsers(prev => {
-          const target = prev[targetUsername];
-          if (!target) return prev;
+        const target = users[targetUsername];
+        if (!target) return;
 
-          const me = prev[currentUser.username] || currentUser;
-          const myFollowing = me.followingList || [];
-          const targetFollowers = target.followersList || [];
+        const me = users[currentUser.username] || currentUser;
+        const myFollowing = me.followingList || [];
+        const targetFollowers = target.followersList || [];
 
-          const isFollowing = myFollowing.includes(targetUsername);
+        const isFollowing = myFollowing.includes(targetUsername);
 
-          let newMyFollowing, newTargetFollowers;
+        let newMyFollowing, newTargetFollowers;
 
-          if (isFollowing) {
-            newMyFollowing = myFollowing.filter(u => u !== targetUsername);
-            newTargetFollowers = targetFollowers.filter(u => u !== currentUser.username);
-            triggerToast(`Unfollowed @${targetUsername}`);
-          } else {
-            newMyFollowing = [...myFollowing, targetUsername];
-            newTargetFollowers = [...targetFollowers, currentUser.username];
-            triggerToast(`Followed @${targetUsername}!`);
-          }
+        if (isFollowing) {
+          newMyFollowing = myFollowing.filter(u => u !== targetUsername);
+          newTargetFollowers = targetFollowers.filter(u => u !== currentUser.username);
+          triggerToast(`Unfollowed @${targetUsername}`);
+        } else {
+          newMyFollowing = [...myFollowing, targetUsername];
+          newTargetFollowers = [...targetFollowers, currentUser.username];
+          triggerToast(`Followed @${targetUsername}!`);
+        }
 
-          const updatedMe = { ...me, followingList: newMyFollowing };
-          const updatedTarget = { ...target, followersList: newTargetFollowers };
+        const updatedMe = { ...me, followingList: newMyFollowing };
+        const updatedTarget = { ...target, followersList: newTargetFollowers };
 
-          setCurrentUser(updatedMe);
+        setCurrentUser(updatedMe);
 
-          return {
-            ...prev,
-            [currentUser.username]: updatedMe,
-            [targetUsername]: updatedTarget
-          };
-        });
+        const updatedUsers = {
+          ...users,
+          [currentUser.username]: updatedMe,
+          [targetUsername]: updatedTarget
+        };
+
+        updateAndSync(updatedUsers, null);
       };
 
       const handleLike = (postId) => {
-        setPosts(prev => prev.map(post => {
+        const updatedPosts = posts.map(post => {
           if (post.id === postId) {
             const isLiked = !post.isLiked;
             return {
@@ -420,28 +475,33 @@
             };
           }
           return post;
-        }));
+        });
+
+        updateAndSync(null, updatedPosts);
       };
 
       const handleDeletePost = (postId) => {
-        setPosts(prev => prev.filter(p => p.id !== postId));
+        const updatedPosts = posts.filter(p => p.id !== postId);
         
         const updatedUser = {
           ...currentUser,
           postsCount: Math.max(0, (currentUser.postsCount || 1) - 1)
         };
         setCurrentUser(updatedUser);
-        setUsers(prev => ({
-          ...prev,
-          [currentUser.username]: updatedUser
-        }));
 
+        const updatedUsers = {
+          ...users,
+          [currentUser.username]: updatedUser
+        };
+
+        updateAndSync(updatedUsers, updatedPosts);
         triggerToast('Meme deleted!');
       };
 
       const handleAddComment = (postId, commentText) => {
         if (!commentText.trim() || !currentUser) return;
-        setPosts(prev => prev.map(post => {
+
+        const updatedPosts = posts.map(post => {
           if (post.id === postId) {
             const newComment = {
               id: 'c_' + Date.now(),
@@ -456,7 +516,9 @@
             };
           }
           return post;
-        }));
+        });
+
+        updateAndSync(null, updatedPosts);
         triggerToast('Comment posted');
       };
 
@@ -476,7 +538,7 @@
           comments: []
         };
         
-        setPosts(prev => [newPost, ...prev]);
+        const updatedPosts = [newPost, ...posts];
         
         const updatedUser = {
           ...currentUser,
@@ -484,11 +546,12 @@
         };
 
         setCurrentUser(updatedUser);
-        setUsers(prev => ({
-          ...prev,
+        const updatedUsers = {
+          ...users,
           [currentUser.username]: updatedUser
-        }));
+        };
 
+        updateAndSync(updatedUsers, updatedPosts);
         setCurrentTab('home');
         triggerToast('Meme posted to feed!');
       };
@@ -921,7 +984,6 @@
       );
     }
 
-    // --- OTHER USER PROFILE MODAL ---
     function UserProfileModal({ user, userPosts, currentUser, darkMode, onClose, onToggleFollow }) {
       const myFollowing = (currentUser && currentUser.followingList) || [];
       const isFollowing = myFollowing.includes(user.username);
