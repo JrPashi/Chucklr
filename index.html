@@ -497,13 +497,40 @@ useEffect(() => {
         triggerToast('Logged out');
       };
 
-      const handleUpdateProfile = (updatedProfile) => {
-        const updatedUser = {
-          ...currentUser,
-          displayName: updatedProfile.displayName || currentUser.displayName,
-          bio: updatedProfile.bio,
-          avatar: updatedProfile.avatar || currentUser.avatar
-        };
+      const handleUpdateProfile = async (updatedProfile) => {
+  const updatedUser = {
+    ...currentUser,
+    displayName: updatedProfile.displayName || currentUser.displayName,
+    bio: updatedProfile.bio,
+    avatar: updatedProfile.avatar || currentUser.avatar
+  };
+
+  const { error } = await chucklrSupabase
+    .from('profiles')
+    .update({
+      display_name: updatedUser.displayName,
+      bio: updatedUser.bio,
+      avatar: updatedUser.avatar
+    })
+    .eq('id', currentUser.id);
+
+  if (error) {
+    console.error('Profile update error:', error);
+    triggerToast('Could not save profile changes');
+    return;
+  }
+
+  setCurrentUser(updatedUser);
+
+  const updatedUsers = {
+    ...users,
+    [currentUser.username]: updatedUser
+  };
+
+  updateAndSync(updatedUsers, null);
+  triggerToast('Profile updated!');
+  setCurrentTab('profile');
+};
 
         setCurrentUser(updatedUser);
         const updatedUsers = {
