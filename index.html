@@ -533,43 +533,96 @@ useEffect(() => {
 };
 
         
-      const handleToggleFollow = (targetUsername) => {
-        if (!currentUser || targetUsername === currentUser.username) return;
+      
+const handleToggleFollow = async (targetUsername) => {
+  if (!currentUser || targetUsername === currentUser.username) return;
 
-        const target = users[targetUsername];
-        if (!target) return;
+  const target = users[targetUsername];
 
-        const me = users[currentUser.username] || currentUser;
-        const myFollowing = me.followingList || [];
-        const targetFollowers = target.followersList || [];
+  if (!target || !currentUser.id || !target.id) {
+    triggerToast('Could not find account details. Please try again.');
+    return;
+  }
 
-        const isFollowing = myFollowing.includes(targetUsername);
+  try {
+    const { data: existingFollow, error: checkError } =
+      await chucklrSupabase
+        .from('follows')
+        .select('follower_id')
+        .eq('follower_id', currentUser.id)
+        .eq('following_id', target.id)
+        .maybeSingle();
 
-        let newMyFollowing, newTargetFollowers;
+    if (checkError) throw checkError;
 
-        if (isFollowing) {
-          newMyFollowing = myFollowing.filter(u => u !== targetUsername);
-          newTargetFollowers = targetFollowers.filter(u => u !== currentUser.username);
-          triggerToast(`Unfollowed @${targetUsername}`);
-        } else {
-          newMyFollowing = [...myFollowing, targetUsername];
-          newTargetFollowers = [...targetFollowers, currentUser.username];
-          triggerToast(`Followed @${targetUsername}!`);
-        }
+    const me = users[currentUser.username] || currentUser;
+    const myFollowing = me.followingList || [];
+    const targetFollowers = target.followersList || [];
 
-        const updatedMe = { ...me, followingList: newMyFollowing };
-        const updatedTarget = { ...target, followersList: newTargetFollowers };
+    let updatedMe;
+    let updatedTarget;
 
-        setCurrentUser(updatedMe);
+    if (existingFollow) {
+      const { error } = await chucklrSupabase
+        .from('follows')
+        .delete()
+        .eq('follower_id', currentUser.id)
+        .eq('following_id', target.id);
 
-        const updatedUsers = {
-          ...users,
-          [currentUser.username]: updatedMe,
-          [targetUsername]: updatedTarget
-        };
+      if (error) throw error;
 
-        updateAndSync(updatedUsers, null);
+      updatedMe = {
+        ...me,
+        followingList: myFollowing.filter(u => u !== targetUsername)
       };
+
+      updatedTarget = {
+        ...target,
+        followersList: targetFollowers.filter(
+          u => u !== currentUser.username
+        )
+      };
+
+      triggerToast(`Unfollowed @${targetUsername}`);
+    } else {
+      const { error } = await chucklrSupabase
+        .from('follows')
+        .insert({
+          follower_id: currentUser.id,
+          following_id: target.id
+        });
+
+      if (error) throw error;
+
+      updatedMe = {
+        ...me,
+        followingList: [...new Set([...myFollowing, targetUsername])]
+      };
+
+      updatedTarget = {
+        ...target,
+        followersList: [...new Set([...targetFollowers, currentUser.username])]
+      };
+
+      triggerToast(`Followed @${targetUsername}!`);
+    }
+
+    setCurrentUser(updatedMe);
+
+    const updatedUsers = {
+      ...users,
+      [currentUser.username]: updatedMe,
+      [targetUsername]: updatedTarget
+    };
+
+    setUsers(updatedUsers);
+    updateAndSync(updatedUsers, null);
+
+  } catch (error) {
+    console.error('Follow error:', error);
+    triggerToast(error.message || 'Could not update follow. Please try again.');
+  }
+};
 
       const handleLike = (postId) => {
         const updatedPosts = posts.map(post => {
