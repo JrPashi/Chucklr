@@ -72,7 +72,10 @@
   </style>
 </head>
 <body class="bg-zinc-950 text-zinc-100 min-h-screen font-sans antialiased selection:bg-white selection:text-black">
-
+const chucklrSupabase = window.supabase.createClient(
+  'https://gvgbcshpkskyoebesnmi.supabase.co',
+  'sb_publishable_r4vNWjKZ6B-UDMRnT1zKjQ_lMXbBU29'
+);
   <div id="root"></div>
 
   <script type="text/babel">
