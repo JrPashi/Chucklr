@@ -295,6 +295,7 @@
 
       const [authMode, setAuthMode] = useState('signup');
       const [authUsernameInput, setAuthUsernameInput] = useState('');
+      const [authEmailInput, setAuthEmailInput] = useState('');
       const [authPasswordInput, setAuthPasswordInput] = useState('');
       const [authError, setAuthError] = useState('');
 
@@ -352,60 +353,116 @@
         setTimeout(() => setShowToast(false), 2500);
       };
 
-      const handleAccountAuth = (e) => {
-        e.preventDefault();
-        const cleanName = authUsernameInput.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
-        const cleanPassword = authPasswordInput.trim();
-        
-        if (!cleanName) {
-          setAuthError('Please enter a valid username');
-          return;
-        }
+      const handleAccountAuth = async (e) => {
+  e.preventDefault();
 
-        if (!cleanPassword) {
-          setAuthError('Please enter a password');
-          return;
-        }
+  const cleanName = authUsernameInput.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+  const cleanEmail = authEmailInput.trim().toLowerCase();
+  const cleanPassword = authPasswordInput;
 
-        if (authMode === 'login') {
-          const existingUser = users[cleanName];
-          if (!existingUser) {
-            setAuthError('Username not found. Please create an account.');
-            return;
-          }
-          if (existingUser.password !== cleanPassword) {
-            setAuthError('Incorrect password. Try again.');
-            return;
-          }
-          setCurrentUser(existingUser);
-          triggerToast(`Welcome back @${cleanName}`);
-        } else {
-          if (users[cleanName]) {
-            setAuthError('Username already taken. Please pick another or log in.');
-            return;
-          }
-          const newUser = {
-            id: 'u_' + cleanName,
+  setAuthError('');
+
+  if (!cleanName) {
+    setAuthError('Please enter a valid username');
+    return;
+  }
+
+  if (!cleanEmail || !cleanEmail.includes('@')) {
+    setAuthError('Please enter a valid email address');
+    return;
+  }
+
+  if (!cleanPassword) {
+    setAuthError('Please enter a password');
+    return;
+  }
+
+  try {
+    if (authMode === 'signup') {
+      const { data: existingProfile, error: lookupError } =
+        await chucklrSupabase
+          .from('profiles')
+          .select('id')
+          .eq('username', cleanName)
+          .maybeSingle();
+
+      if (lookupError) throw lookupError;
+
+      if (existingProfile) {
+        setAuthError('Username already taken. Please choose another.');
+        return;
+      }
+
+      const { data, error } = await chucklrSupabase.auth.signUp({
+        email: cleanEmail,
+        password: cleanPassword,
+        options: {
+          data: {
             username: cleanName,
-            password: cleanPassword,
-            displayName: cleanName,
-            avatar: DEFAULT_AVATAR,
-            bio: 'Just joined the chaos on Chucklr.',
-            followersList: [],
-            followingList: [],
-            postsCount: 0
-          };
-          
-          const updatedUsers = { ...users, [cleanName]: newUser };
-          updateAndSync(updatedUsers, null);
-          setCurrentUser(newUser);
-          triggerToast(`Account @${cleanName} created!`);
+            display_name: cleanName
+          }
         }
+      });
 
-        setAuthUsernameInput('');
-        setAuthPasswordInput('');
-        setAuthError('');
+      if (error) throw error;
+
+      setAuthEmailInput('');
+      setAuthUsernameInput('');
+      setAuthPasswordInput('');
+
+      if (!data.session) {
+        setAuthError('Account created! Please check your email to confirm your account before logging in.');
+        return;
+      }
+
+      triggerToast(`Account @${cleanName} created!`);
+    } else {
+      const { data, error } =
+        await chucklrSupabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password: cleanPassword
+        });
+
+      if (error) throw error;
+
+      const { data: profile, error: profileError } =
+        await chucklrSupabase
+          .from('profiles')
+          .select('*')
+          .eq('id', data.user.id)
+          .single();
+
+      if (profileError) throw profileError;
+
+      const appUser = {
+        ...(users[profile.username] || {}),
+        id: profile.id,
+        username: profile.username,
+        displayName: profile.display_name || profile.username,
+        avatar: profile.avatar || DEFAULT_AVATAR,
+        bio: profile.bio || '',
+        followersList: users[profile.username]?.followersList || [],
+        followingList: users[profile.username]?.followingList || [],
+        postsCount: users[profile.username]?.postsCount || 0
       };
+
+      setUsers(prev => ({
+        ...prev,
+        [profile.username]: appUser
+      }));
+
+      setCurrentUser(appUser);
+      triggerToast(`Welcome back @${profile.username}`);
+
+      setAuthEmailInput('');
+      setAuthUsernameInput('');
+      setAuthPasswordInput('');
+    }
+  } catch (error) {
+    console.error('Chucklr authentication error:', error);
+    setAuthError(error.message || 'Something went wrong. Please try again.');
+  }
+};
 
       const handleLogout = () => {
         setCurrentUser(null);
@@ -583,6 +640,17 @@
               </div>
 
               <form onSubmit={handleAccountAuth} class="space-y-3 text-left">
+               <div>
+  <label class={`text-[10px] font-bold uppercase tracking-wider block mb-1 ${darkMode ? 'text-zinc-400' : 'text-zinc-600'}`}>Email</label>
+  <input
+    type="email"
+    value={authEmailInput}
+    onChange={e => setAuthEmailInput(e.target.value)}
+    placeholder="Enter your email"
+    required
+    class={`w-full text-xs rounded-xl px-4 py-3 border focus:outline-none ${darkMode ? 'bg-zinc-900 border-zinc-800 text-white focus:border-white' : 'bg-white border-zinc-300 text-black focus:border-black'}`}
+  />
+</div>
                 <div>
                   <label class={`text-[10px] font-bold uppercase tracking-wider block mb-1 ${darkMode ? 'text-zinc-400' : 'text-zinc-600'}`}>Username</label>
                   <input 
