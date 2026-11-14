@@ -532,17 +532,7 @@ useEffect(() => {
   setCurrentTab('profile');
 };
 
-        setCurrentUser(updatedUser);
-        const updatedUsers = {
-          ...users,
-          [currentUser.username]: updatedUser
-        };
-
-        updateAndSync(updatedUsers, null);
-        triggerToast('Profile updated!');
-        setCurrentTab('profile');
-      };
-
+        
       const handleToggleFollow = (targetUsername) => {
         if (!currentUser || targetUsername === currentUser.username) return;
 
