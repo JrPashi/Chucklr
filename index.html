@@ -299,27 +299,55 @@
       const [authPasswordInput, setAuthPasswordInput] = useState('');
       const [authError, setAuthError] = useState('');
 
-      // FETCH CLOUD DATA ON LOAD & PERIODICALLY SYNC
-      useEffect(() => {
-        async function loadCloud() {
-          const cloudData = await fetchCloudData();
-          if (cloudData) {
-            if (cloudData.users) {
-              setUsers(prev => ({ ...prev, ...cloudData.users }));
-              localStorage.setItem('chucklr_users', JSON.stringify({ ...users, ...cloudData.users }));
-            }
-            if (cloudData.posts && Array.isArray(cloudData.posts)) {
-              setPosts(cloudData.posts);
-              localStorage.setItem('chucklr_posts', JSON.stringify(cloudData.posts));
-            }
-          }
-        }
-        loadCloud();
+// FETCH CLOUD DATA AND SUPABASE PROFILES
+useEffect(() => {
+  async function loadCloud() {
+    const cloudData = await fetchCloudData();
 
-        // Polling interval every 5s for live cross-device updates
-        const timer = setInterval(loadCloud, 5000);
-        return () => clearInterval(timer);
-      }, []);
+    if (cloudData) {
+      if (cloudData.users) {
+        setUsers(prev => ({ ...prev, ...cloudData.users }));
+      }
+
+      if (cloudData.posts && Array.isArray(cloudData.posts)) {
+        setPosts(cloudData.posts);
+        localStorage.setItem('chucklr_posts', JSON.stringify(cloudData.posts));
+      }
+    }
+
+    const { data: profiles, error } = await chucklrSupabase
+      .from('profiles')
+      .select('*');
+
+    if (error) {
+      console.error('Could not load Chucklr profiles:', error);
+      return;
+    }
+
+    const publicUsers = {};
+
+    profiles.forEach(profile => {
+      publicUsers[profile.username] = {
+        ...(users[profile.username] || {}),
+        id: profile.id,
+        username: profile.username,
+        displayName: profile.display_name || profile.username,
+        avatar: profile.avatar || DEFAULT_AVATAR,
+        bio: profile.bio || '',
+        followersList: users[profile.username]?.followersList || [],
+        followingList: users[profile.username]?.followingList || [],
+        postsCount: users[profile.username]?.postsCount || 0
+      };
+    });
+
+    setUsers(prev => ({ ...prev, ...publicUsers }));
+  }
+
+  loadCloud();
+
+  const timer = setInterval(loadCloud, 10000);
+  return () => clearInterval(timer);
+}, []);
 
       // SAVE TO CLOUD AND LOCAL STORAGE
       const updateAndSync = (newUsers, newPosts) => {
