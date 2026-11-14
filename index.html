@@ -77,6 +77,10 @@
 
   <script type="text/babel">
     const { useState, useEffect, useRef, Component } = React;
+    const chucklrSupabase = window.supabase.createClient(
+  'https://gvgbcshpkskyoebesnmi.supabase.co',
+  'sb_publishable_r4vNWjKZ6B-UDMRnT1zKjQ_lMXbBU29'
+);
 
     // --- RELATIVE TIMESTAMP FORMATTER ---
     function formatTimeAgo(timestamp) {
