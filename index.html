@@ -299,48 +299,114 @@
       const [authPasswordInput, setAuthPasswordInput] = useState('');
       const [authError, setAuthError] = useState('');
 
+
 // FETCH CLOUD DATA AND SUPABASE PROFILES
 useEffect(() => {
   async function loadCloud() {
     const cloudData = await fetchCloudData();
 
-    if (cloudData) {
-      if (cloudData.users) {
-        setUsers(prev => ({ ...prev, ...cloudData.users }));
-      }
-
-      if (cloudData.posts && Array.isArray(cloudData.posts)) {
-        setPosts(cloudData.posts);
-        localStorage.setItem('chucklr_posts', JSON.stringify(cloudData.posts));
-      }
+    if (cloudData?.posts && Array.isArray(cloudData.posts)) {
+      setPosts(cloudData.posts);
+      localStorage.setItem(
+        'chucklr_posts',
+        JSON.stringify(cloudData.posts)
+      );
     }
 
-    const { data: profiles, error } = await chucklrSupabase
-      .from('profiles')
-      .select('*');
+    const { data: profiles, error: profileError } =
+      await chucklrSupabase
+        .from('profiles')
+        .select('*');
 
-    if (error) {
-      console.error('Could not load Chucklr profiles:', error);
+    if (profileError) {
+      console.error('Could not load Chucklr profiles:', profileError);
       return;
     }
 
-    const publicUsers = {};
+    const { data: follows, error: followsError } =
+      await chucklrSupabase
+        .from('follows')
+        .select('follower_id, following_id');
 
+    if (followsError) {
+      console.error('Could not load Chucklr follows:', followsError);
+      return;
+    }
+
+    const profileUsernames = new Set(
+      profiles.map(profile => profile.username)
+    );
+
+    const usernameById = {};
     profiles.forEach(profile => {
-      publicUsers[profile.username] = {
-        ...(users[profile.username] || {}),
-        id: profile.id,
-        username: profile.username,
-        displayName: profile.display_name || profile.username,
-        avatar: profile.avatar || DEFAULT_AVATAR,
-        bio: profile.bio || '',
-        followersList: users[profile.username]?.followersList || [],
-        followingList: users[profile.username]?.followingList || [],
-        postsCount: users[profile.username]?.postsCount || 0
-      };
+      usernameById[profile.id] = profile.username;
     });
 
-    setUsers(prev => ({ ...prev, ...publicUsers }));
+    const followersByUsername = {};
+    const followingByUsername = {};
+
+    profiles.forEach(profile => {
+      followersByUsername[profile.username] = [];
+      followingByUsername[profile.username] = [];
+    });
+
+    follows.forEach(follow => {
+      const follower = usernameById[follow.follower_id];
+      const following = usernameById[follow.following_id];
+
+      if (follower && following) {
+        followingByUsername[follower].push(following);
+        followersByUsername[following].push(follower);
+      }
+    });
+
+    setUsers(prev => {
+      const mergedUsers = {
+        ...prev,
+        ...(cloudData?.users || {})
+      };
+
+      const publicUsers = {};
+
+      profiles.forEach(profile => {
+        const username = profile.username;
+        const oldUser = mergedUsers[username] || {};
+
+        // Preserve relationships involving legacy accounts
+        const legacyFollowing = (oldUser.followingList || [])
+          .filter(name => !profileUsernames.has(name));
+
+        const legacyFollowers = (oldUser.followersList || [])
+          .filter(name => !profileUsernames.has(name));
+
+        publicUsers[username] = {
+          ...oldUser,
+          id: profile.id,
+          username: username,
+          displayName: profile.display_name || username,
+          avatar: profile.avatar || DEFAULT_AVATAR,
+          bio: profile.bio || '',
+          followingList: [
+            ...new Set([
+              ...followingByUsername[username],
+              ...legacyFollowing
+            ])
+          ],
+          followersList: [
+            ...new Set([
+              ...followersByUsername[username],
+              ...legacyFollowers
+            ])
+          ],
+          postsCount: oldUser.postsCount || 0
+        };
+      });
+
+      return {
+        ...mergedUsers,
+        ...publicUsers
+      };
+    });
   }
 
   loadCloud();
@@ -348,6 +414,7 @@ useEffect(() => {
   const timer = setInterval(loadCloud, 10000);
   return () => clearInterval(timer);
 }, []);
+
 
       // SAVE TO CLOUD AND LOCAL STORAGE
       const updateAndSync = (newUsers, newPosts) => {
