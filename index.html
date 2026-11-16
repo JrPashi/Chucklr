@@ -537,28 +537,23 @@ const handleToggleFollow = async (targetUsername) => {
   if (!currentUser || targetUsername === currentUser.username) return;
 
   const target = users[targetUsername];
-
-  if (!target || !currentUser.id || !target.id) {
-    triggerToast('Account details not ready. Please try again.');
-    return;
-  }
+  if (!target) return;
 
   const me = users[currentUser.username] || currentUser;
   const myFollowing = me.followingList || [];
   const targetFollowers = target.followersList || [];
 
-  const isFollowing = myFollowing.includes(targetUsername);
+  const isUUID = (id) =>
+    typeof id === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+  let isFollowing = myFollowing.includes(targetUsername);
 
   try {
-    if (isFollowing) {
-      const { error } = await chucklrSupabase
-        .from('follows')
-        .delete()
-        .eq('follower_id', currentUser.id)
-        .eq('following_id', target.id);
+    const bothHaveUUID =
+      isUUID(currentUser.id) && isUUID(target.id);
 
-      if (error) throw error;
-    } else {
+    if (bothHaveUUID) {
       const { data: existingFollow, error: checkError } =
         await chucklrSupabase
           .from('follows')
@@ -569,7 +564,17 @@ const handleToggleFollow = async (targetUsername) => {
 
       if (checkError) throw checkError;
 
-      if (!existingFollow) {
+      isFollowing = !!existingFollow;
+
+      if (isFollowing) {
+        const { error } = await chucklrSupabase
+          .from('follows')
+          .delete()
+          .eq('follower_id', currentUser.id)
+          .eq('following_id', target.id);
+
+        if (error) throw error;
+      } else {
         const { error } = await chucklrSupabase
           .from('follows')
           .insert({
@@ -589,8 +594,15 @@ const handleToggleFollow = async (targetUsername) => {
       ? targetFollowers.filter(u => u !== currentUser.username)
       : [...new Set([...targetFollowers, currentUser.username])];
 
-    const updatedMe = { ...me, followingList: newMyFollowing };
-    const updatedTarget = { ...target, followersList: newTargetFollowers };
+    const updatedMe = {
+      ...me,
+      followingList: newMyFollowing
+    };
+
+    const updatedTarget = {
+      ...target,
+      followersList: newTargetFollowers
+    };
 
     setCurrentUser(updatedMe);
 
