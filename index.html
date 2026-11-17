@@ -795,7 +795,7 @@ const handleToggleFollow = async (targetUsername) => {
         triggerToast('Comment posted');
       };
 
-      const handleCreatePost = async (newPostData) => {
+const handleCreatePost = async (newPostData) => {
   if (!currentUser) return;
 
   try {
@@ -805,6 +805,13 @@ const handleToggleFollow = async (targetUsername) => {
 
     if (newPostData.imageFile) {
       uploadedImageUrl = await uploadPostImage(newPostData.imageFile);
+    }
+
+    const { data: authData, error: authError } =
+      await chucklrSupabase.auth.getUser();
+
+    if (authError || !authData.user) {
+      throw new Error('You must be signed in to post.');
     }
 
     const newPost = {
@@ -819,6 +826,23 @@ const handleToggleFollow = async (targetUsername) => {
       timestamp: Date.now(),
       comments: []
     };
+
+    const { error: postError } = await chucklrSupabase
+      .from('posts')
+      .insert({
+        id: newPost.id,
+        user_id: authData.user.id,
+        username: currentUser.username,
+        image_url: uploadedImageUrl,
+        caption: newPostData.caption,
+        tags: newPostData.tags,
+        likes: 0,
+        comments_count: 0,
+        timestamp: newPost.timestamp,
+        comments: []
+      });
+
+    if (postError) throw postError;
 
     const updatedPosts = [newPost, ...posts];
 
@@ -839,7 +863,7 @@ const handleToggleFollow = async (targetUsername) => {
     triggerToast('Meme posted to feed!');
   } catch (error) {
     console.error('Post creation failed:', error);
-    triggerToast('Image upload failed. Please try again.');
+    triggerToast('Post failed. Please try again.');
   }
 };
 
