@@ -767,39 +767,53 @@ const handleToggleFollow = async (targetUsername) => {
         triggerToast('Comment posted');
       };
 
-      const handleCreatePost = (newPostData) => {
-        if (!currentUser) return;
+      const handleCreatePost = async (newPostData) => {
+  if (!currentUser) return;
 
-        const newPost = {
-          id: 'post_' + Date.now(),
-          userId: currentUser.username,
-          imageUrl: newPostData.imageUrl,
-          caption: newPostData.caption,
-          tags: newPostData.tags,
-          likes: 0,
-          isLiked: false,
-          commentsCount: 0,
-          timestamp: Date.now(),
-          comments: []
-        };
-        
-        const updatedPosts = [newPost, ...posts];
-        
-        const updatedUser = {
-          ...currentUser,
-          postsCount: (currentUser.postsCount || 0) + 1
-        };
+  try {
+    triggerToast('Uploading meme...');
 
-        setCurrentUser(updatedUser);
-        const updatedUsers = {
-          ...users,
-          [currentUser.username]: updatedUser
-        };
+    let uploadedImageUrl = newPostData.imageUrl;
 
-        updateAndSync(updatedUsers, updatedPosts);
-        setCurrentTab('home');
-        triggerToast('Meme posted to feed!');
-      };
+    if (newPostData.imageFile) {
+      uploadedImageUrl = await uploadPostImage(newPostData.imageFile);
+    }
+
+    const newPost = {
+      id: 'post_' + Date.now(),
+      userId: currentUser.username,
+      imageUrl: uploadedImageUrl,
+      caption: newPostData.caption,
+      tags: newPostData.tags,
+      likes: 0,
+      isLiked: false,
+      commentsCount: 0,
+      timestamp: Date.now(),
+      comments: []
+    };
+
+    const updatedPosts = [newPost, ...posts];
+
+    const updatedUser = {
+      ...currentUser,
+      postsCount: (currentUser.postsCount || 0) + 1
+    };
+
+    setCurrentUser(updatedUser);
+
+    const updatedUsers = {
+      ...users,
+      [currentUser.username]: updatedUser
+    };
+
+    updateAndSync(updatedUsers, updatedPosts);
+    setCurrentTab('home');
+    triggerToast('Meme posted to feed!');
+  } catch (error) {
+    console.error('Post creation failed:', error);
+    triggerToast('Image upload failed. Please try again.');
+  }
+};
 
       if (!currentUser) {
         return (
@@ -1389,6 +1403,7 @@ const handleToggleFollow = async (targetUsername) => {
       const [caption, setCaption] = useState('');
       const [tags, setTags] = useState('chucklr, meme');
       const [imageUrl, setImageUrl] = useState('');
+      const [imageFile, setImageFile] = useState(null);
       const [isCompressing, setIsCompressing] = useState(false);
       const fileInputRef = useRef(null);
 
@@ -1398,6 +1413,7 @@ const handleToggleFollow = async (targetUsername) => {
           try {
             setIsCompressing(true);
             const processedUrl = await processImageFile(file);
+            setImageFile(file);
             setImageUrl(processedUrl);
           } catch (err) {
             console.error(err);
@@ -1411,6 +1427,7 @@ const handleToggleFollow = async (targetUsername) => {
         e.preventDefault();
         if (!caption.trim() || !imageUrl) return;
         onSubmit({
+          imageFile,
           caption,
           imageUrl,
           tags: tags.split(',').map(t => t.trim().replace('#', ''))
