@@ -424,6 +424,34 @@ useEffect(() => {
         ...publicUsers
       };
     });
+        const { data: supabasePosts, error: postsError } =
+      await chucklrSupabase
+        .from('posts')
+        .select('*')
+        .order('timestamp', { ascending: false });
+
+    if (postsError) {
+      console.error('Could not load Chucklr posts:', postsError);
+    } else if (supabasePosts) {
+      const formattedPosts = supabasePosts.map(post => ({
+        id: post.id,
+        userId: post.username,
+        imageUrl: post.image_url,
+        caption: post.caption,
+        tags: post.tags || [],
+        likes: post.likes || 0,
+        isLiked: false,
+        commentsCount: post.comments_count || 0,
+        timestamp: post.timestamp,
+        comments: post.comments || []
+      }));
+
+      setPosts(formattedPosts);
+      localStorage.setItem(
+        'chucklr_posts',
+        JSON.stringify(formattedPosts)
+      );
+  }
   }
 
   loadCloud();
