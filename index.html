@@ -81,7 +81,24 @@
   'https://gvgbcshpkskyoebesnmi.supabase.co',
   'sb_publishable_r4vNWjKZ6B-UDMRnT1zKjQ_lMXbBU29'
 );
+async function uploadPostImage(file) {
+  const fileName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
 
+  const { data, error } = await chucklrSupabase.storage
+    .from('post-images')
+    .upload(fileName, file);
+
+  if (error) {
+    console.error('Image upload failed:', error);
+    throw error;
+  }
+
+  const { data: publicUrlData } = chucklrSupabase.storage
+    .from('post-images')
+    .getPublicUrl(fileName);
+
+  return publicUrlData.publicUrl;
+    }
     // --- RELATIVE TIMESTAMP FORMATTER ---
     function formatTimeAgo(timestamp) {
       if (!timestamp) return 'Just now';
