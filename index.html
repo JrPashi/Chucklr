@@ -425,32 +425,64 @@ useEffect(() => {
       };
     });
         const { data: supabasePosts, error: postsError } =
-      await chucklrSupabase
-        .from('posts')
-        .select('*')
-        .order('timestamp', { ascending: false });
+  await chucklrSupabase
+    .from('posts')
+    .select('*')
+    .order('timestamp', { ascending: false });
 
-    if (postsError) {
-      console.error('Could not load Chucklr posts:', postsError);
-    } else if (supabasePosts) {
-      const formattedPosts = supabasePosts.map(post => ({
-        id: post.id,
-        userId: post.username,
-        imageUrl: post.image_url,
-        caption: post.caption,
-        tags: post.tags || [],
-        likes: post.likes || 0,
-        isLiked: false,
-        commentsCount: post.comments_count || 0,
-        timestamp: post.timestamp,
-        comments: post.comments || []
-      }));
+if (postsError) {
+  console.error('Could not load Chucklr posts:', postsError);
+} else if (supabasePosts) {
 
-      setPosts(formattedPosts);
-      localStorage.setItem(
-        'chucklr_posts',
-        JSON.stringify(formattedPosts)
-      );
+  const { data: supabaseComments, error: commentsError } =
+    await chucklrSupabase
+      .from('comments')
+      .select('*')
+      .order('created_at', { ascending: true });
+
+  if (commentsError) {
+    console.error('Could not load comments:', commentsError);
+  }
+
+  const commentsByPost = {};
+
+  (supabaseComments || []).forEach(comment => {
+    if (!commentsByPost[comment.post_id]) {
+      commentsByPost[comment.post_id] = [];
+    }
+
+    commentsByPost[comment.post_id].push({
+      id: comment.id,
+      username: comment.username,
+      text: comment.comment_text,
+      time: comment.created_at
+        ? new Date(comment.created_at).toLocaleString()
+        : 'Just now'
+    });
+  });
+
+  const formattedPosts = supabasePosts.map(post => {
+    const postComments = commentsByPost[post.id] || [];
+
+    return {
+      id: post.id,
+      userId: post.username,
+      imageUrl: post.image_url,
+      caption: post.caption,
+      tags: post.tags || [],
+      likes: post.likes || 0,
+      isLiked: false,
+      commentsCount: postComments.length,
+      timestamp: post.timestamp,
+      comments: postComments
+    };
+  });
+
+  setPosts(formattedPosts);
+  localStorage.setItem(
+    'chucklr_posts',
+    JSON.stringify(formattedPosts)
+  );
   }
   }
 
@@ -771,29 +803,54 @@ const handleToggleFollow = async (targetUsername) => {
         triggerToast('Meme deleted!');
       };
 
-      const handleAddComment = (postId, commentText) => {
-        if (!commentText.trim() || !currentUser) return;
+      const handleAddComment = async (postId, commentText) => {
+  if (!commentText.trim() || !currentUser) return;
 
-        const updatedPosts = posts.map(post => {
-          if (post.id === postId) {
-            const newComment = {
-              id: 'c_' + Date.now(),
-              username: currentUser.username,
-              text: commentText,
-              time: 'Just now'
-            };
-            return {
-              ...post,
-              commentsCount: post.commentsCount + 1,
-              comments: [...post.comments, newComment]
-            };
-          }
-          return post;
-        });
+  try {
+    const { data: authData, error: authError } =
+      await chucklrSupabase.auth.getUser();
 
-        updateAndSync(null, updatedPosts);
-        triggerToast('Comment posted');
-      };
+    if (authError || !authData.user) {
+      throw new Error('You must be signed in to comment.');
+    }
+
+    const newComment = {
+      id: 'c_' + Date.now(),
+      username: currentUser.username,
+      text: commentText.trim(),
+      time: 'Just now'
+    };
+
+    const { error } = await chucklrSupabase
+      .from('comments')
+      .insert({
+        id: newComment.id,
+        post_id: postId,
+        user_id: authData.user.id,
+        username: currentUser.username,
+        comment_text: newComment.text
+      });
+
+    if (error) throw error;
+
+    const updatedPosts = posts.map(post => {
+      if (post.id === postId) {
+        return {
+          ...post,
+          commentsCount: (post.commentsCount || 0) + 1,
+          comments: [...(post.comments || []), newComment]
+        };
+      }
+      return post;
+    });
+
+    setPosts(updatedPosts);
+    triggerToast('Comment posted!');
+  } catch (error) {
+    console.error('Comment failed:', error);
+    triggerToast('Comment failed. Please try again.');
+  }
+};
 
 const handleCreatePost = async (newPostData) => {
   if (!currentUser) return;
