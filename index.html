@@ -444,6 +444,21 @@ if (postsError) {
     console.error('Could not load comments:', commentsError);
   }
 
+  const { data: supabaseLikes, error: likesError } =
+    await chucklrSupabase
+      .from('post_likes')
+      .select('post_id, user_id');
+
+  if (likesError) {
+    console.error('Could not load likes:', likesError);
+    throw likesError;
+  }
+
+  const { data: authData } =
+    await chucklrSupabase.auth.getUser();
+
+  const currentAuthUserId = authData?.user?.id;
+
   const commentsByPost = {};
 
   (supabaseComments || []).forEach(comment => {
@@ -461,8 +476,19 @@ if (postsError) {
     });
   });
 
+  const likesByPost = {};
+
+  (supabaseLikes || []).forEach(like => {
+    if (!likesByPost[like.post_id]) {
+      likesByPost[like.post_id] = [];
+    }
+
+    likesByPost[like.post_id].push(like.user_id);
+  });
+
   const formattedPosts = supabasePosts.map(post => {
     const postComments = commentsByPost[post.id] || [];
+    const postLikes = likesByPost[post.id] || [];
 
     return {
       id: post.id,
@@ -470,8 +496,10 @@ if (postsError) {
       imageUrl: post.image_url,
       caption: post.caption,
       tags: post.tags || [],
-      likes: post.likes || 0,
-      isLiked: false,
+      likes: postLikes.length,
+      isLiked: currentAuthUserId
+        ? postLikes.includes(currentAuthUserId)
+        : false,
       commentsCount: postComments.length,
       timestamp: post.timestamp,
       comments: postComments
@@ -479,6 +507,7 @@ if (postsError) {
   });
 
   setPosts(formattedPosts);
+
   localStorage.setItem(
     'chucklr_posts',
     JSON.stringify(formattedPosts)
@@ -769,22 +798,73 @@ const handleToggleFollow = async (targetUsername) => {
     triggerToast(error.message || 'Could not update follow. Please try again.');
   }
 };
-      const handleLike = (postId) => {
-        const updatedPosts = posts.map(post => {
-          if (post.id === postId) {
-            const isLiked = !post.isLiked;
-            return {
-              ...post,
-              isLiked,
-              likes: isLiked ? post.likes + 1 : post.likes - 1
-            };
-          }
-          return post;
+      const handleLike = async (postId) => {
+  if (!currentUser) return;
+
+  try {
+    const { data: authData, error: authError } =
+      await chucklrSupabase.auth.getUser();
+
+    if (authError || !authData.user) {
+      throw new Error('You must be signed in to like posts.');
+    }
+
+    const post = posts.find(p => p.id === postId);
+    if (!post) return;
+
+    const { data: existingLike, error: checkError } =
+      await chucklrSupabase
+        .from('post_likes')
+        .select('post_id')
+        .eq('post_id', postId)
+        .eq('user_id', authData.user.id)
+        .maybeSingle();
+
+    if (checkError) throw checkError;
+
+    if (existingLike) {
+      const { error } = await chucklrSupabase
+        .from('post_likes')
+        .delete()
+        .eq('post_id', postId)
+        .eq('user_id', authData.user.id);
+
+      if (error) throw error;
+    } else {
+      const { error } = await chucklrSupabase
+        .from('post_likes')
+        .insert({
+          post_id: postId,
+          user_id: authData.user.id
         });
 
-        updateAndSync(null, updatedPosts);
-      };
+      if (error) throw error;
+    }
 
+    const { count, error: countError } = await chucklrSupabase
+      .from('post_likes')
+      .select('*', { count: 'exact', head: true })
+      .eq('post_id', postId);
+
+    if (countError) throw countError;
+
+    const updatedPosts = posts.map(p =>
+      p.id === postId
+        ? {
+            ...p,
+            isLiked: !existingLike,
+            likes: count || 0
+          }
+        : p
+    );
+
+    setPosts(updatedPosts);
+
+  } catch (error) {
+    console.error('Like error:', error);
+    triggerToast('Could not update like. Please try again.');
+  }
+};
       const handleDeletePost = (postId) => {
         const updatedPosts = posts.filter(p => p.id !== postId);
         
